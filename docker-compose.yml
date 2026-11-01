@@ -1,0 +1,11 @@
+services:
+  paprika-mcp-go:
+    build:
+      context: .
+      dockerfile: src/services/paprika-mcp-go/Dockerfile
+    image: localhost/paprika-mcp-go:latest
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      LOG_LEVEL: DEBUG

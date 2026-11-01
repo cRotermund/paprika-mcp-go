@@ -1,0 +1,22 @@
+# Build context is the repository root; keep it small and free of secrets.
+.git
+.github
+.idea
+.vscode
+docs
+infra
+tests
+**/*.md
+
+# Never send local secrets to the builder. Examples stay out too; they are not
+# needed to build an image.
+**/.env
+**/*.env
+**/.env.*
+**/*.env.example
+
+# Build outputs
+**/bin
+**/*.exe
+**/*.test
+**/*.out

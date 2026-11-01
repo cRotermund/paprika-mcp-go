@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet and test every workspace module
+        run: |
+          for dir in $(go list -m -f '{{.Dir}}'); do
+            (cd "$dir" && go vet ./... && go test ./...)
+          done
+
+  kustomize:
+    name: Render Kustomize overlays
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Provide local env files from examples
+        run: |
+          shopt -s nullglob
+          for example in infra/k8s/local/*.env.example; do
+            cp "$example" "${example%.example}"
+          done
+
+      - name: Render overlays
+        run: |
+          kubectl kustomize infra/k8s/local > /dev/null
+          kubectl kustomize infra/k8s/prod > /dev/null
+
+  docker:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: paprika-mcp-go
+            file: ./src/services/paprika-mcp-go/Dockerfile
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}

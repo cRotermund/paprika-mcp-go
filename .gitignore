@@ -1,0 +1,57 @@
+# ==========================================
+# Environment Variables & Secrets (CRITICAL)
+# ==========================================
+.env
+*.env
+.env.*
+!.env.example
+!*.env.example
+*.pem
+*.key
+certs/
+secrets/
+
+# ==========================================
+# Operating System Files
+# ==========================================
+.DS_Store
+Thumbs.db
+*.local
+*.log
+
+# ==========================================
+# Go
+# ==========================================
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage outputs
+*.out
+*.test
+*.prof
+
+# ==========================================
+# Docker
+# ==========================================
+docker-compose.override.yml
+.docker/
+
+# ==========================================
+# Kubernetes & Kustomize
+# ==========================================
+.kube/
+kubeconfig
+*.kubeconfig
+kustomization.local.yaml
+
+# ==========================================
+# IDEs and Editors
+# ==========================================
+.idea/
+.vscode/
+*.suo
+*.swp

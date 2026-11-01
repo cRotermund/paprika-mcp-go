@@ -1,0 +1,1274 @@
+openapi: 3.1.0
+info:
+  title: Paprika Cloud Sync API (Unofficial)
+  version: 2026-11-01
+  license:
+    name: MIT
+    identifier: MIT
+  description: |
+    Unofficial reference for the HTTP API that Paprika Recipe Manager 3 uses to sync
+    with its cloud service. Paprika does not publish this API, and it can change without
+    notice. This project is not affiliated with Hindsight Labs, LLC.
+
+    Baseline: Paprika for Windows 3.3.1. The [prose docs](README.md) explain the sync
+    model, risks, and open questions in more depth.
+
+    ## Evidence
+
+    Each operation has an `x-evidence` value showing how it was established:
+
+    - `live`: verified against the real API by this project.
+    - `capture`: seen in real traffic from the Windows client.
+    - `client`: seen in the Windows client's behavior, but not observed on the wire.
+    - `kappari`: reported by the kappari project.
+    - `inferred`: reasoned from other evidence.
+
+    **This project's own code has not written to the API yet.** Every write format below
+    comes from the official client.
+
+    ## Writes
+
+    A write is a `multipart/form-data` POST with one part named `data`. Its bytes are
+    **gzip-compressed JSON**, so the `data` field each write operation shows is its shape
+    **before compression**. The client sends this header on the part, with no `Content-Type`:
+
+    `Content-Disposition: form-data; name=data; filename=file; filename*=utf-8''file`
+
+    Whether the server accepts Go's standard multipart format is untested.
+
+    Bulk routes take an array of changed objects, and add or update them by `uid`. They
+    do not replace the resource. Always send the whole object, and call `sync/notify/`
+    after writing.
+
+    In upload schemas, `required` lists what the official client always sends. What the
+    server actually requires is unknown. In read schemas, it lists what was always present
+    in sampled responses.
+
+    ## Errors
+
+    Errors use an `error` object, **sometimes with HTTP 200.** Always check for it. The
+    official client also treats HTTP 503 as a special case.
+servers:
+  - url: https://www.paprikaapp.com/api
+security:
+  - bearerAuth: []
+tags:
+  - name: Account
+    description: Log in to get a token.
+  - name: Sync
+    description: Change counters and notifications.
+  - name: Recipes
+    description: Recipes and their categories.
+  - name: Meal plans
+    description: Calendar meals and their types.
+  - name: Grocery lists
+    description: Lists, items, aisles, and remembered ingredients.
+  - name: Menus
+    description: Reusable meal templates. Out of scope for this project's first release.
+  - name: Other
+    description: Resources this project does not plan to use yet.
+paths:
+  /v1/account/login/:
+    post:
+      tags: [Account]
+      operationId: login
+      summary: Log in with email and password
+      description: |
+        The recommended login. No license data is needed, and the token works on v2 sync
+        routes. A wrong password returns HTTP 200 with an `error` object.
+      x-evidence: live
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: A token, or an error object.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginResult'
+                  - $ref: '#/components/schemas/ErrorResult'
+              examples:
+                success:
+                  value:
+                    result:
+                      token: example-token
+                wrongPassword:
+                  value:
+                    error:
+                      message: Incorrect password.
+                      code: 0
+  /v2/account/login/:
+    post:
+      tags: [Account]
+      operationId: loginWithLicense
+      summary: Log in with a license
+      deprecated: true
+      description: |
+        Used by the desktop client. Kappari reports that it rejects password-only logins from
+        non-mobile clients. Marked deprecated here because this project should use the v1
+        login instead; Paprika has not deprecated it.
+      x-evidence: kappari
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [email, password, data, signature]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                data:
+                  type: string
+                  description: License data as a JSON string.
+                signature:
+                  type: string
+                  description: Base64-encoded license signature.
+      responses:
+        '200':
+          description: A token, or an error object.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginResult'
+                  - $ref: '#/components/schemas/ErrorResult'
+  /v2/sync/status/:
+    get:
+      tags: [Sync]
+      operationId: getSyncStatus
+      summary: Get change counters
+      description: |
+        Maps each resource name to a counter. Counters count changes, not objects, and rise
+        by one per written object. Compare them to skip unnecessary downloads.
+
+        `cookbooks`, `pantrylocations`, and `recipesearches` have counters, but their
+        `sync/{name}/` routes return 404.
+      x-evidence: live
+      responses:
+        '200':
+          description: Counters by resource name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: object
+                    additionalProperties:
+                      type: integer
+              example:
+                result:
+                  recipes: 120
+                  meals: 45
+                  groceries: 300
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/notify/:
+    post:
+      tags: [Sync]
+      operationId: notifyDevices
+      summary: Tell other devices to sync
+      description: Has no request body. The client calls this after a sync that uploaded something.
+      x-evidence: capture
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/recipes/:
+    get:
+      tags: [Recipes]
+      operationId: listRecipes
+      summary: List recipe IDs and hashes
+      description: |
+        Returns only `uid` and `hash`, so fetch full recipes individually. Includes trashed
+        recipes, but not permanently deleted ones.
+      x-evidence: live
+      responses:
+        '200':
+          description: A summary of every recipe.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RecipeSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/recipe/{uid}/:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        description: The recipe's `uid`.
+        schema:
+          $ref: '#/components/schemas/Uid'
+    get:
+      tags: [Recipes]
+      operationId: getRecipe
+      summary: Get one recipe
+      x-evidence: live
+      responses:
+        '200':
+          description: The full recipe.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: '#/components/schemas/Recipe'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Recipes]
+      operationId: saveRecipe
+      summary: Create, update, trash, or delete a recipe
+      description: |
+        The same request covers every change. Send the whole recipe, with a new `hash` every
+        time, or other devices may not notice the change.
+
+        - **Create:** choose a new uppercase UUID as the `uid`.
+        - **Trash:** set `in_trash: true`.
+        - **Permanently delete:** set `deleted: true`. Assume this cannot be undone.
+
+        A photo adds a second part named `photo_upload`, which is not documented here.
+      x-evidence: capture
+      requestBody:
+        required: true
+        description: A part named `data`, holding one gzip-compressed JSON `RecipeUpload` object.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding one gzip-compressed JSON `RecipeUpload` object.
+                  $ref: '#/components/schemas/RecipeUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/categories/:
+    get:
+      tags: [Recipes]
+      operationId: listCategories
+      summary: List recipe categories
+      x-evidence: live
+      responses:
+        '200':
+          description: All categories. They nest through `parent_uid`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Recipes]
+      operationId: saveCategories
+      summary: Add or update categories
+      x-evidence: client
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `CategoryUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `CategoryUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CategoryUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/meals/:
+    get:
+      tags: [Meal plans]
+      operationId: listMeals
+      summary: List all planned meals
+      description: No date filter is known, so filter locally.
+      x-evidence: live
+      responses:
+        '200':
+          description: All meals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Meal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Meal plans]
+      operationId: saveMeals
+      summary: Add, move, or delete meals
+      description: |
+        Send the whole meal each time. Change `date` to move it, or set `deleted: true` to
+        delete it. Use only `recipe_uid` and `type_uid` values that exist, because other
+        devices may silently change invalid ones.
+      x-evidence: capture
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `MealUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `MealUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MealUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/mealtypes/:
+    get:
+      tags: [Meal plans]
+      operationId: listMealTypes
+      summary: List meal types
+      x-evidence: live
+      responses:
+        '200':
+          description: The account's meal types, such as lunch or dinner.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MealType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Meal plans]
+      operationId: saveMealTypes
+      summary: Add or update meal types
+      x-evidence: client
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `MealTypeUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `MealTypeUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MealTypeUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/groceries/:
+    get:
+      tags: [Grocery lists]
+      operationId: listGroceryItems
+      summary: List all grocery items
+      description: Returns items from every list. Filter by `list_uid` locally.
+      x-evidence: live
+      responses:
+        '200':
+          description: All grocery items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroceryItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Grocery lists]
+      operationId: saveGroceryItems
+      summary: Add, update, check off, or delete items
+      description: |
+        Send the whole item each time. Set `purchased: true` to check it off, or
+        `deleted: true` to delete it.
+
+        **Verify that `list_uid` exists first.** Other devices may mark an item with an unknown
+        list as deleted.
+      x-evidence: capture
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `GroceryItemUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `GroceryItemUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/GroceryItemUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/grocerylists/:
+    get:
+      tags: [Grocery lists]
+      operationId: listGroceryLists
+      summary: List grocery lists
+      x-evidence: live
+      responses:
+        '200':
+          description: All grocery lists.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroceryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Grocery lists]
+      operationId: saveGroceryLists
+      summary: Add, update, or delete grocery lists
+      x-evidence: capture
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `GroceryListUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `GroceryListUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/GroceryListUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/groceryaisles/:
+    get:
+      tags: [Grocery lists]
+      operationId: listGroceryAisles
+      summary: List store aisles
+      x-evidence: live
+      responses:
+        '200':
+          description: All aisles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroceryAisle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Grocery lists]
+      operationId: saveGroceryAisles
+      summary: Add or update aisles
+      x-evidence: client
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `GroceryAisleUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `GroceryAisleUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/GroceryAisleUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/groceryingredients/:
+    get:
+      tags: [Grocery lists]
+      operationId: listGroceryIngredients
+      summary: List remembered ingredients
+      description: Appears to remember which aisle an ingredient belongs to.
+      x-evidence: live
+      responses:
+        '200':
+          description: All remembered ingredients.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroceryIngredient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Grocery lists]
+      operationId: saveGroceryIngredients
+      summary: Add or update remembered ingredients
+      x-evidence: client
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `GroceryIngredientUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `GroceryIngredientUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/GroceryIngredientUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/menus/:
+    get:
+      tags: [Menus]
+      operationId: listMenus
+      summary: List menus
+      x-evidence: live
+      responses:
+        '200':
+          description: All menus.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Menu'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Menus]
+      operationId: saveMenus
+      summary: Add or update menus
+      x-evidence: client
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `MenuUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `MenuUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MenuUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/menuitems/:
+    get:
+      tags: [Menus]
+      operationId: listMenuItems
+      summary: List menu items
+      x-evidence: live
+      responses:
+        '200':
+          description: All menu items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MenuItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Menus]
+      operationId: saveMenuItems
+      summary: Add or update menu items
+      x-evidence: client
+      requestBody:
+        required: true
+        description: A part named `data`, holding a gzip-compressed JSON array of `MenuItemUpload` objects.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: A part named `data`, holding a gzip-compressed JSON array of `MenuItemUpload` objects.
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MenuItemUpload'
+            encoding:
+              data:
+                contentType: application/gzip
+      responses:
+        '200':
+          $ref: '#/components/responses/WriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/photos/:
+    get:
+      tags: [Other]
+      operationId: listPhotos
+      summary: List recipe photos
+      x-evidence: live
+      responses:
+        '200':
+          description: Photo records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Photo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/pantry/:
+    get:
+      tags: [Other]
+      operationId: listPantryItems
+      summary: List pantry items
+      description: The route is confirmed, but the tested account had no items, so the fields are unknown.
+      x-evidence: live
+      responses:
+        '200':
+          $ref: '#/components/responses/UnknownList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v2/sync/bookmarks/:
+    get:
+      tags: [Other]
+      operationId: listBookmarks
+      summary: List bookmarks
+      description: The route is confirmed, but the tested account had no items, so the fields are unknown.
+      x-evidence: live
+      responses:
+        '200':
+          $ref: '#/components/responses/UnknownList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: The token from the login route.
+  responses:
+    WriteResult:
+      description: The write was accepted, or an error object.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                required: [result]
+                properties:
+                  result:
+                    const: true
+              - $ref: '#/components/schemas/ErrorResult'
+          example:
+            result: true
+    UnknownList:
+      description: An array of objects with unknown fields.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                type: array
+                items:
+                  type: object
+    Unauthorized:
+      description: The token is missing, invalid, or possibly expired. Log in again and retry once.
+    NotFound:
+      description: Unknown route or object.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+          example:
+            error:
+              message: Not found.
+              code: 0
+  schemas:
+    Uid:
+      type: string
+      description: |
+        An opaque ID. Most are uppercase UUIDs, but live data also has uppercase 64-character hex values
+        and longer strings. Never parse one. Clients generate new ones as uppercase UUIDs.
+      example: 11111111-2222-4333-8444-555555555555
+    Hash:
+      type: string
+      description: |
+        A change marker, not a content checksum. Compare hashes as opaque strings. The Windows
+        client generates a new one for each write: the SHA-256 of a random UUID, as uppercase
+        hex. Live recipe hashes are mostly lowercase, with some uppercase.
+      pattern: ^[0-9A-Fa-f]{64}$
+    Timestamp:
+      type: string
+      description: A date and time with no time zone, as `YYYY-MM-DD HH:MM:SS`.
+      pattern: ^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$
+      example: '2030-01-15 00:00:00'
+    Deleted:
+      type: boolean
+      description: |
+        Upload-only. `true` deletes the object, and the server stops listing it. Assume this
+        cannot be undone.
+    LoginResult:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+    ErrorResult:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, code]
+          properties:
+            message:
+              type: string
+            code:
+              type: integer
+              description: Only `0` has been observed.
+    RecipeSummary:
+      type: object
+      required: [uid, hash]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        hash:
+          $ref: '#/components/schemas/Hash'
+    RecipeUploadFields:
+      type: object
+      description: The fields Paprika for Windows 3.3.1 uploads, apart from `deleted`.
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        created:
+          $ref: '#/components/schemas/Timestamp'
+        hash:
+          $ref: '#/components/schemas/Hash'
+        name:
+          type: string
+        description:
+          type: string
+        ingredients:
+          type: string
+          description: Multiline text. The Windows client writes line breaks as `\r\n`.
+        directions:
+          type: string
+          description: Multiline text.
+        notes:
+          type: string
+        nutritional_info:
+          type: string
+        prep_time:
+          type: string
+          description: Free text.
+        cook_time:
+          type: string
+          description: Free text.
+        total_time:
+          type: string
+          description: Free text.
+        difficulty:
+          type: string
+          description: Free text.
+        servings:
+          type: string
+          description: Free text.
+        rating:
+          type: integer
+          minimum: 0
+          maximum: 5
+          description: 0 means unrated.
+        scale:
+          description: Always null in samples, so its real type is unknown.
+        source:
+          type: string
+        source_url:
+          type: string
+        on_favorites:
+          type: boolean
+        is_pinned:
+          type: boolean
+        in_trash:
+          type: boolean
+          description: The recoverable app trash.
+        photo:
+          type: [string, 'null']
+          description: Preserve on update.
+        photo_large:
+          type: [string, 'null']
+          description: Preserve on update.
+        photo_hash:
+          type: [string, 'null']
+          description: Preserve on update.
+        image_url:
+          type: [string, 'null']
+          description: Preserve on update.
+        categories:
+          type: array
+          description: Category `uid` values. Send the complete list, because a partial one removes the others.
+          items:
+            $ref: '#/components/schemas/Uid'
+    Recipe:
+      description: |
+        A full recipe as returned by the API. Round-trip fields this schema does not name, since
+        the server may add more.
+      allOf:
+        - $ref: '#/components/schemas/RecipeUploadFields'
+        - type: object
+          properties:
+            photo_url:
+              type: [string, 'null']
+              description: Server-provided download link. Not uploaded by 3.3.1.
+            on_grocery_list:
+              type: boolean
+              description: Not uploaded by 3.3.1.
+            prep_minutes:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            cook_minutes:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            total_minutes:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            servings_min:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            servings_max:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            nutrition:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            metadata_version:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+            cookbook_uid:
+              description: Always null in samples. Newer than 3.3.1 (inferred).
+    RecipeUpload:
+      description: The recipe object as uploaded by the Windows client.
+      allOf:
+        - $ref: '#/components/schemas/RecipeUploadFields'
+        - type: object
+          required: [uid, hash, deleted, name, created]
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    Category:
+      type: object
+      required: [uid, name, order_flag]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        order_flag:
+          type: integer
+        parent_uid:
+          type: [string, 'null']
+          description: The parent category's `uid`.
+        cookbook_uid:
+          description: Always null in samples.
+    CategoryUpload:
+      allOf:
+        - $ref: '#/components/schemas/Category'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    MealFields:
+      type: object
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        order_flag:
+          type: integer
+          description: Position within a day.
+        name:
+          type: string
+          description: Display name.
+        date:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          type: integer
+          description: Older fixed meal type, matching `original_type` on a meal type.
+        recipe_uid:
+          type: [string, 'null']
+          description: The linked recipe, or null when there is none.
+        type_uid:
+          type: string
+          description: The meal type's `uid`.
+    Meal:
+      allOf:
+        - $ref: '#/components/schemas/MealFields'
+        - type: object
+          properties:
+            is_ingredient:
+              type: boolean
+              description: Not uploaded by 3.3.1.
+            scale:
+              description: Always null in samples. Not uploaded by 3.3.1.
+    MealUpload:
+      allOf:
+        - $ref: '#/components/schemas/MealFields'
+        - type: object
+          required: [uid, deleted, order_flag, name, date, type, recipe_uid, type_uid]
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+      example:
+        uid: AAAAAAAA-1111-4222-8333-444444444444
+        deleted: false
+        order_flag: 0
+        name: Vegetable Soup
+        date: '2030-01-15 00:00:00'
+        type: 2
+        recipe_uid: 11111111-2222-4333-8444-555555555555
+        type_uid: BBBBBBBB1111422283334444444444BBBBBBBB1111422283334444444444BBBB
+    MealType:
+      type: object
+      required: [uid, name, order_flag, original_type]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        order_flag:
+          type: integer
+        original_type:
+          type: integer
+          description: 0 to 3 were seen. Their meanings are unconfirmed, so use `name` instead.
+        color:
+          type: string
+          description: A 7-character value, likely a hex color (inferred).
+        export_time:
+          type: integer
+          description: Likely seconds after midnight (inferred).
+        export_all_day:
+          type: boolean
+    MealTypeUpload:
+      allOf:
+        - $ref: '#/components/schemas/MealType'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    GroceryItemFields:
+      type: object
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+          description: Display text.
+        order_flag:
+          type: integer
+        purchased:
+          type: boolean
+          description: Checked off.
+        recipe:
+          type: [string, 'null']
+          description: Source recipe name (inferred). Always null in samples.
+        aisle:
+          type: string
+          description: Aisle name.
+        ingredient:
+          type: string
+          description: Parsed ingredient. The client sent the full text here for a new item.
+        instruction:
+          type: string
+          description: Parsed preparation note. Can be empty.
+        quantity:
+          type: string
+          description: Parsed amount. Can be empty.
+        separate:
+          type: boolean
+          description: Meaning unconfirmed.
+        aisle_uid:
+          type: string
+          description: The aisle's `uid`.
+        list_uid:
+          type: string
+          description: The grocery list's `uid`. Must exist.
+    GroceryItem:
+      allOf:
+        - $ref: '#/components/schemas/GroceryItemFields'
+        - type: object
+          properties:
+            recipe_uid:
+              description: Always null in samples. Not uploaded by 3.3.1.
+    GroceryItemUpload:
+      allOf:
+        - $ref: '#/components/schemas/GroceryItemFields'
+        - type: object
+          required: [uid, deleted, name, order_flag, purchased, recipe, aisle, ingredient, instruction, quantity, separate, aisle_uid, list_uid]
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+      example:
+        uid: CCCCCCCC-1111-4222-8333-444444444444
+        deleted: false
+        name: carrots
+        order_flag: 0
+        purchased: false
+        recipe: null
+        aisle: Produce
+        ingredient: carrots
+        instruction: ''
+        quantity: ''
+        separate: false
+        aisle_uid: DDDDDDDD1111422283334444444444DDDDDDDD1111422283334444444444DDDD
+        list_uid: EEEEEEEE-1111-4222-8333-444444444444
+    GroceryList:
+      type: object
+      required: [uid, name, order_flag, is_default, reminders_list]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        order_flag:
+          type: integer
+        is_default:
+          type: boolean
+        reminders_list:
+          type: string
+          description: Can be empty. A list created in the client sent `Paprika`.
+    GroceryListUpload:
+      allOf:
+        - $ref: '#/components/schemas/GroceryList'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    GroceryAisle:
+      type: object
+      required: [uid, name, order_flag]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        order_flag:
+          type: integer
+    GroceryAisleUpload:
+      allOf:
+        - $ref: '#/components/schemas/GroceryAisle'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    GroceryIngredient:
+      type: object
+      required: [uid, name]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        aisle_uid:
+          type: [string, 'null']
+    GroceryIngredientUpload:
+      allOf:
+        - $ref: '#/components/schemas/GroceryIngredient'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    Menu:
+      type: object
+      required: [uid, name, order_flag, days]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        notes:
+          type: string
+        order_flag:
+          type: integer
+        days:
+          type: integer
+    MenuUpload:
+      allOf:
+        - $ref: '#/components/schemas/Menu'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    MenuItem:
+      type: object
+      required: [uid, name, order_flag, day, menu_uid]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        name:
+          type: string
+        order_flag:
+          type: integer
+        day:
+          type: integer
+        menu_uid:
+          type: string
+        recipe_uid:
+          type: [string, 'null']
+        type_uid:
+          type: string
+        is_ingredient:
+          type: boolean
+        scale:
+          description: Always null in samples.
+    MenuItemUpload:
+      allOf:
+        - $ref: '#/components/schemas/MenuItem'
+        - type: object
+          properties:
+            deleted:
+              $ref: '#/components/schemas/Deleted'
+    Photo:
+      type: object
+      required: [uid, filename, hash, name, order_flag, recipe_uid]
+      properties:
+        uid:
+          $ref: '#/components/schemas/Uid'
+        filename:
+          type: string
+        hash:
+          $ref: '#/components/schemas/Hash'
+        name:
+          type: string
+        order_flag:
+          type: integer
+        recipe_uid:
+          type: string

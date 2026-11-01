@@ -1,0 +1,7 @@
+extends:
+  - recommended
+rules:
+  # The real routes end in a slash, so the reference must match them.
+  no-path-trailing-slash: off
+  # Login reports failure as HTTP 200 with an error object. No 4XX has been observed.
+  operation-4xx-response: off

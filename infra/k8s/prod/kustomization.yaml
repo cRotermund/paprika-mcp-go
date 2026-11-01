@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+namespace: chad-applications
+
+images:
+  - name: paprika-mcp-go
+    newName: ghcr.io/crotermund/paprika-mcp-go/paprika-mcp-go
+    newTag: latest
+
+patches:
+  - target:
+      kind: Deployment
+      name: paprika-mcp-go
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: ghcr-pull-secret
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always

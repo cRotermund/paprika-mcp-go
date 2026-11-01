@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+images:
+  - name: paprika-mcp-go
+    newName: localhost/paprika-mcp-go
+
+patches:
+  - target:
+      kind: Deployment
+      name: paprika-mcp-go
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: LOG_LEVEL
+          value: "DEBUG"

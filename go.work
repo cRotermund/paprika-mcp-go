@@ -1,0 +1,6 @@
+go 1.26
+
+use (
+	./src/services/paprika-mcp-go
+	./src/tools/paprika-api-probe
+)
