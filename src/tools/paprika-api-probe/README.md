@@ -4,7 +4,7 @@ Local exploratory tool that checks [the API docs](../../../docs/paprika-api/READ
 against the live Paprika service. It is never deployed: it has no Dockerfile,
 Kustomize manifests, or image publish entry.
 
-It logs in, then only sends paced GET requests; a transport guard refuses
+By default it logs in, then only sends paced GET requests; a transport guard refuses
 anything else. It reads each sync resource and a few full recipes.
 
 The report lists keys, types, counts, numeric values, and string shapes, such as
@@ -18,3 +18,35 @@ cp .env.example .env
 # Fill in PAPRIKA_EMAIL and PAPRIKA_PASSWORD in .env.
 go run . -out probe-report.local
 ```
+
+Use `-env-file` to read credentials from another file, such as a test account's.
+
+## Write Checks
+
+`-write-checks` answers questions about how the server treats writes, and is meant for a
+dedicated test account. The first run was on the real account, by the owner's choice, on 2026-11-02;
+later runs use a test account. `-write-checks`, `-followup`, and `-cleanup` are the only modes that
+can write, and `-inspect` only reads. `-write-checks`:
+
+- Refuses to run unless `-confirm-account` repeats the configured email, and unless the account
+  has 25 recipes or fewer or `-allow-real-account` is given.
+- Saves meals, groceries, and related lists to a `.local` backup first (`-backup`, default `write-checks-backup.local`). The backup contains
+  personal text, so do not share it. Recipes are not backed up.
+- POSTs only to `groceries`, `grocerylists`, `meals`, `recipe/{uid}`, and `notify`, and only for
+  objects it created, named `MCP-TEST`. It records each one in a `.local` state file first (`-state`, default `write-checks-state.local`).
+- Sends one paced request at a time with no retries, and stops at the first unexpected response.
+  It never tests rate limits.
+
+```sh
+go run . -env-file .env.sandbox -write-checks -confirm-account <email> -out write-checks-report.local
+```
+
+The objects stay in place so that their results can be checked in the app. `-inspect` re-reads
+them without writing, to show what the app changed. `-followup 1` or `-followup 2` runs a later
+stage on the same objects, between checks on a device. Remove them with:
+
+```sh
+go run . -env-file .env.sandbox -cleanup -confirm-account <email> -out cleanup-report.local
+```
+
+Cleanup leaves the test recipe in the trash, to be emptied in the app.

@@ -26,8 +26,9 @@ Login, read routes, and JSON keys were **verified live** on 2026-11-01 with the
 read-only probe in `src/tools/paprika-api-probe`.
 
 Writes from Paprika for Windows 3.3.1 were **captured** on 2026-11-01 for recipes,
-meals, grocery items, and grocery lists. **This project's own code has not written
-to the API yet,** so its request formatting is untested.
+meals, grocery items, and grocery lists. The probe's write checks ran on 2026-11-02,
+so **this project's request formatting is verified** for those routes. See
+[open questions](notes/open-questions.md#write-questions).
 
 ## Evidence Labels
 

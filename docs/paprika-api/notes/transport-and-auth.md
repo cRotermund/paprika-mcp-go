@@ -49,7 +49,7 @@ lifetime is unknown. Plan to log in again on 401 and retry once. (Inferred)
 | Header | Value | Evidence |
 | --- | --- | --- |
 | `Authorization` | `Bearer <token>` | Live |
-| `User-Agent` | A custom value works for login and reads. Writes are untested. | Live |
+| `User-Agent` | A custom value works for login, reads, and writes | Live |
 | `Expect` | Not sent by the client on sync requests, so `100-continue` is not needed | Capture |
 | `Accept-Encoding` | `gzip, deflate`; the client decompresses both, and the server gzips responses to it | Client, Capture |
 
@@ -76,9 +76,8 @@ Content-Disposition: form-data; name=data; filename=file; filename*=utf-8''file
 
 Field names have no quotes. (Capture) The client builds its forms with .NET's
 standard multipart class, so this looks like a .NET framing habit, not a deliberate
-server rule. (Client, Inferred) Try Go's standard `mime/multipart` first, and only
-hand-craft the framing if the server rejects it. See
-[open questions](open-questions.md#transport).
+server rule. (Client, Inferred) Go's standard `mime/multipart` is also accepted, with
+quoted names and an `application/octet-stream` part type. (Live)
 
 ## Responses
 
@@ -94,6 +93,7 @@ Errors use an `error` object, with or without an error status. (Live)
 | --- | --- |
 | HTTP 200 | Wrong password: `{ "error": { "message": "Incorrect password.", "code": 0 } }` |
 | HTTP 404 | Unknown route: `{ "error": { "message": "Not found.", "code": 0 } }` |
+| HTTP 401 | Invalid token: `{ "error": { "message": "Invalid or expired credentials.", "code": 0 } }` |
 
 Always check for an `error` object, even on HTTP 200. The client also treats 401 and
 503 as special cases. (Client)

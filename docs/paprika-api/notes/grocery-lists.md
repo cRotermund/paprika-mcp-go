@@ -46,6 +46,9 @@ A new item from the client sent its text in both `name` and `ingredient`, with e
 `quantity` and `instruction`, and that was accepted. (Capture) Use that form for items
 without separate parsed values. (Inferred)
 
+The server kept `quantity` and `instruction` when a later upload of the item omitted them.
+(Live) Still send the whole item, because this behavior is undocumented.
+
 ### Reference Handling
 
 The client handles bad references during download, and some outcomes are
@@ -58,8 +61,20 @@ destructive: (Client)
 | **Unknown `list_uid`** | **Marks the item deleted** |
 | Empty `list_uid` | Assigns the default list |
 
-**Writing an item with an invalid `list_uid` can cause another device to delete
-it.** Always verify the list exists before writing. (Inferred)
+The server does not validate these references: it stored items with an empty or unknown
+`aisle_uid` and an unknown `list_uid` as sent. (Live)
+
+After a phone app synced those test items: (Live)
+
+- The unknown `aisle_uid` item appeared under Miscellaneous, and the app re-uploaded it with
+  that aisle.
+- The empty `aisle_uid` item also appeared under Miscellaneous, but the server's copy was
+  unchanged when re-read.
+- **The unknown `list_uid` item disappeared from the server's list, which fits the client
+  behavior above.** Always verify the list exists before writing.
+
+The app groups items by `aisle_uid`, not the `aisle` text: valid items with a different `aisle`
+value appeared under the aisle that `aisle_uid` names.
 
 ## Grocery Aisles (`groceryaisles`)
 

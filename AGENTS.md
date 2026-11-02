@@ -27,6 +27,8 @@ An MCP server exposing Paprika recipe data to MCP clients.
 | Configuration | Environment variables, `.env` via dotenv |
 | Deployment    | Kubernetes + Kustomize                  |
 | CI/CD         | GitHub Actions, GHCR                    |
+| Index storage | Optional: filesystem or S3 (`aws-sdk-go-v2`) |
+| S3 emulation  | SeaweedFS, tests only                   |
 
 **Do not introduce** languages, frameworks, or infrastructure tools outside
 this list without explicit approval.

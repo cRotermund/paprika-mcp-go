@@ -55,9 +55,9 @@ references before writing.** (Inferred)
 
 The sampled account has four types, with `original_type` values 0 to 3. Their
 `export_time` values are 0, 28800, 43200, and 64800 seconds, which are midnight,
-8 AM, noon, and 6 PM. (Live) This suggests 0 to 3 mean breakfast, lunch, dinner, and
-snack, but the probe does not record names, so the order is not confirmed. (Inferred)
-Use each account's `type_uid` and `name` instead of hard-coding this.
+8 AM, noon, and 6 PM. Their names are Breakfast, Lunch, Dinner, and Snacks, in
+`original_type` order. (Live) Use each account's `type_uid` and `name` instead of
+hard-coding this, because other accounts have not been checked.
 
 ## Menus and Menu Items
 
