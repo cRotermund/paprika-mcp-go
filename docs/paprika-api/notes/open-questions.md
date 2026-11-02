@@ -35,7 +35,7 @@ come from re-reading through the API, and say nothing about what a client app th
 | --- | --- | --- |
 | Are fields sent as a partial object kept or blanked? | Kept, on a grocery item | Still send the whole object |
 | Does the server accept and keep fields 3.3.1 does not send? | Yes: `servings_min`, `servings_max`, and `prep_minutes`, sent as integers | Other newer fields |
-| Are newer recipe fields kept when an upload omits them? | Yes | |
+| Are newer recipe fields kept when an upload omits them? | Yes, for `servings_min`, `servings_max`, and `prep_minutes` | Other newer fields |
 | Does the server reject stale writes? | No. A write carrying an old `hash` replaced the newer content and restored the old `hash` | |
 | Does a write without a new `hash` reach other devices? | The server stores the edit and keeps the `hash` | Answered: no. A phone that already held the recipe kept the old text, in a sync that did apply other changes |
 | Must `hash` have a certain case? | No. A lowercase value was stored as sent | |
@@ -53,7 +53,7 @@ body, and counters rise by one per written object, including within a bulk POST.
 | --- | --- |
 | Is a custom `User-Agent` accepted? | Settled: yes, for login, reads, and writes |
 | Does the server gzip responses? | Settled: yes, for the client's requests |
-| Does Go's default multipart formatting work on sync routes? | Settled: yes, on `groceries`, `grocerylists`, `meals`, and `recipe/{uid}` |
+| Does Go's default multipart formatting work on sync routes? | Settled: yes, on `groceries`, `grocerylists`, `meals`, and `recipe/{uid}`; `notify` has no body |
 | Does gzip apply to every bulk write? | Settled for groceries, grocery lists, meals, and recipes; the other routes come from the client and were not captured |
 | How long do tokens last? | Observe over time. An invalid token returns HTTP 401 with "Invalid or expired credentials." and code 0 |
 | What are the rate limits? | Never test this, on any account; stay well below the reported 300 connections per minute |

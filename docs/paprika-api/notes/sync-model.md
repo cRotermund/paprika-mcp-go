@@ -135,7 +135,7 @@ The server stores whatever `hash` it is sent, in either case, and does not requi
 new one. (Live) **A recipe write that does not change `hash` is not picked up by a device
 that already holds the recipe:** a phone kept the old text through a sync that applied other
 changes, so the device and server then disagree. A later edit with a new `hash` did reach
-the phone, though it needed an app restart to reappear in the trash view. (Live) Always send
+the phone, though the trash view may need an app restart to refresh. (Live) Always send
 a new `hash`.
 
 ## Conflicts

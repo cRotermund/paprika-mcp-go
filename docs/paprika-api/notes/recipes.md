@@ -73,17 +73,18 @@ shows whether Paprika for Windows 3.3.1 includes the field in its uploads. (Capt
 | `categories` | array of strings | yes | Category `uid` values, not names |
 | `photo_url` | string | no | Server-provided download link |
 | `on_grocery_list` | boolean | no | |
-| `prep_minutes` | null | no | Newer than 3.3.1 |
+| `prep_minutes` | integer or null | no | Newer than 3.3.1; integer when set (Live) |
 | `cook_minutes` | null | no | Newer than 3.3.1 |
 | `total_minutes` | null | no | Newer than 3.3.1 |
-| `servings_min` | null | no | Newer than 3.3.1 |
-| `servings_max` | null | no | Newer than 3.3.1 |
+| `servings_min` | integer or null | no | Newer than 3.3.1; integer when set (Live) |
+| `servings_max` | integer or null | no | Newer than 3.3.1; integer when set (Live) |
 | `nutrition` | null | no | Newer than 3.3.1 |
 | `metadata_version` | null | no | Newer than 3.3.1 |
 | `cookbook_uid` | null | no | Newer than 3.3.1 |
 
-The client also uploads `deleted`, which responses never include. A `null` type
-means every sample was null, so the real type is still unknown. "Newer than 3.3.1"
+The client also uploads `deleted`, which responses never include. Where the type
+is `null`, every sample was null, so the real type is still unknown. The three integer
+fields are the exception, as the table shows. "Newer than 3.3.1"
 is an inference from the 3.3.1 client not using the field. (Inferred)
 
 The server accepts uploads that omit the fields 3.3.1 does not send. (Capture) It accepted

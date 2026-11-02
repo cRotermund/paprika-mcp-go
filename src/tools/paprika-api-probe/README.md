@@ -24,14 +24,16 @@ Use `-env-file` to read credentials from another file, such as a test account's.
 ## Write Checks
 
 `-write-checks` answers questions about how the server treats writes, and is meant for a
-dedicated test account. It is the only mode besides `-cleanup` that can write, and it:
+dedicated test account. The first run was on the real account, by the owner's choice, on 2026-11-02;
+later runs use a test account. `-write-checks`, `-followup`, and `-cleanup` are the only modes that
+can write, and `-inspect` only reads. `-write-checks`:
 
 - Refuses to run unless `-confirm-account` repeats the configured email, and unless the account
   has 25 recipes or fewer or `-allow-real-account` is given.
-- Saves meals, groceries, and related lists to a `.local` backup first. The backup contains
+- Saves meals, groceries, and related lists to a `.local` backup first (`-backup`, default `write-checks-backup.local`). The backup contains
   personal text, so do not share it. Recipes are not backed up.
 - POSTs only to `groceries`, `grocerylists`, `meals`, `recipe/{uid}`, and `notify`, and only for
-  objects it created, named `MCP-TEST`. It records each one in a `.local` state file first.
+  objects it created, named `MCP-TEST`. It records each one in a `.local` state file first (`-state`, default `write-checks-state.local`).
 - Sends one paced request at a time with no retries, and stops at the first unexpected response.
   It never tests rate limits.
 
@@ -40,7 +42,8 @@ go run . -env-file .env.sandbox -write-checks -confirm-account <email> -out writ
 ```
 
 The objects stay in place so that their results can be checked in the app. `-inspect` re-reads
-them without writing, to show what the app changed. Remove them with:
+them without writing, to show what the app changed. `-followup 1` or `-followup 2` runs a later
+stage on the same objects, between checks on a device. Remove them with:
 
 ```sh
 go run . -env-file .env.sandbox -cleanup -confirm-account <email> -out cleanup-report.local

@@ -23,8 +23,9 @@ info:
     - `kappari`: reported by the kappari project.
     - `inferred`: reasoned from other evidence.
 
-    **This project's own code has not written to the API yet.** Every write format below
-    comes from the official client.
+    **This project's probe has written to the API.** Its write checks ran on 2026-11-02
+    against `MCP-TEST` objects on one real account, and verified our request format on the
+    routes they covered. The write formats below were first captured from the official client.
 
     ## Writes
 
@@ -34,7 +35,9 @@ info:
 
     `Content-Disposition: form-data; name=data; filename=file; filename*=utf-8''file`
 
-    Whether the server accepts Go's standard multipart format is untested.
+    The server accepts Go's standard multipart format, with quoted names and an
+    `application/octet-stream` part, on `groceries`, `grocerylists`, `meals`, and
+    `recipe/{uid}` (live). `notify` has no body.
 
     Bulk routes take an array of changed objects, and add or update them by `uid`. They
     do not replace the resource. Always send the whole object, and call `sync/notify/`
@@ -807,6 +810,14 @@ components:
                   type: object
     Unauthorized:
       description: The token is missing, invalid, or possibly expired. Log in again and retry once.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+          example:
+            error:
+              message: Invalid or expired credentials.
+              code: 0
     NotFound:
       description: Unknown route or object.
       content:
@@ -961,15 +972,18 @@ components:
               type: boolean
               description: Not uploaded by 3.3.1.
             prep_minutes:
-              description: Always null in samples. Newer than 3.3.1 (inferred).
+              type: [integer, 'null']
+              description: Null in the sampled recipes. An integer when set (live). Newer than 3.3.1 (inferred).
             cook_minutes:
               description: Always null in samples. Newer than 3.3.1 (inferred).
             total_minutes:
               description: Always null in samples. Newer than 3.3.1 (inferred).
             servings_min:
-              description: Always null in samples. Newer than 3.3.1 (inferred).
+              type: [integer, 'null']
+              description: Null in the sampled recipes. An integer when set (live). Newer than 3.3.1 (inferred).
             servings_max:
-              description: Always null in samples. Newer than 3.3.1 (inferred).
+              type: [integer, 'null']
+              description: Null in the sampled recipes. An integer when set (live). Newer than 3.3.1 (inferred).
             nutrition:
               description: Always null in samples. Newer than 3.3.1 (inferred).
             metadata_version:

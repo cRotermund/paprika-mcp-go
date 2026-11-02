@@ -183,7 +183,7 @@ Every write follows the same steps, one at a time under a process-wide lock:
 3. **Apply only the requested changes** to the raw object.
 4. **Validate references** against current data.
 5. **Generate values:** an uppercase UUID for a new `uid`, as the official client does, and a
-   new `hash` for any recipe.
+   new `hash` for any recipe. A device that holds a recipe ignores an edit whose `hash` is unchanged.
 6. **POST only the changed objects.** Bulk routes receive an array, and recipes go one at a
    time.
 7. **Call `sync/notify/`** so other devices pick up the change.
@@ -198,15 +198,15 @@ Every write follows the same steps, one at a time under a process-wide lock:
 | Always send the whole object | Omitted fields may be blanked |
 | Treat `uid` as an opaque string | Live data has non-UUID values |
 | Never retry a POST automatically after a timeout | The outcome is unknown. Report that and let the caller re-read. |
-| Verify a grocery `list_uid` exists | Another device may mark the item deleted if it does not |
+| Verify a grocery `list_uid` exists | An item with an unknown list vanished after a phone synced, during the first write check run |
 | Verify `recipe_uid` and `type_uid` on meals | Other devices may silently change them |
 | Keep `categories` complete on recipe updates | A partial list removes the others |
 | Do not touch photo fields | Photos are out of scope |
 
 ### Conflicts
 
-The official client does no conflict detection, so the last write should win unless the
-server rejects stale writes, which [check W4](#write-checks) will test. To narrow the risk, `update_recipe` accepts
+The official client does no conflict detection, so the last write wins, because [check W4](#write-checks) showed the server accepts stale
+writes. To narrow the risk, `update_recipe` accepts
 an optional `expected_hash`, and fails if the current hash differs. `get_recipe` returns
 the hash so a client can pass it back. Meals and grocery items have no hash, so they rely
 on the re-read in step 2 only.
@@ -216,7 +216,7 @@ on the re-read in step 2 only.
 | Resource | Behavior |
 | --- | --- |
 | Recipes | `trash_recipe` sets `in_trash`. `restore_recipe` clears it. No permanent delete. |
-| Meals and grocery items | Sends `deleted: true`. Assume this cannot be undone unless check W6 shows otherwise. The tool result includes the full object from before the delete, so it can be re-created as a new object. |
+| Meals and grocery items | Sends `deleted: true`. [Check W6](#write-checks) confirmed restore for grocery items. Meal restore is untested, so assume meal deletes cannot be undone. The tool result includes the full object from before the delete, so it can be re-created as a new object. |
 | Grocery lists | Refuses the default list and any list that still has items. |
 
 ## Tools
@@ -265,13 +265,13 @@ zone, so none is applied.
 
 Item text goes in both `name` and `ingredient`, with empty parsed fields, unless the
 caller provides them. This matches what the app sends. Aisles are resolved in this order:
-the given aisle name, then the remembered ingredient, then the fallback chosen by
-[check W5](#write-checks).
+the given aisle name, then the remembered ingredient, then an existing aisle that we
+choose, because [check W5](#write-checks) showed that unknown aisles are stored and then rewritten.
 
 ### Batch Writes
 
 `add_meals` and `add_grocery_items` accept at most 50 items. They send one POST per batch
-if [check W9](#write-checks) passes, and one POST per item otherwise. Results name any item
+as [check W9](#write-checks) showed that a bulk POST is applied in full. Results name any item
 that failed, and report a timeout as an unknown outcome.
 
 ### Annotations and Untrusted Content
@@ -430,6 +430,9 @@ the test account.
 | W8 | `sync/notify/` accepted, and the writes reached a phone | Keep the sequence. We did not separate this from the phone's own sync |
 | W9 | Applied in full | Send batches in one POST |
 
+Still open on the test account: W7 on the Windows client, a meal restore on a device that synced
+the delete, and separating W8 from ordinary sync.
+
 | # | Check | If it passes | If it fails |
 | --- | --- | --- | --- |
 | W1 | Go's standard multipart format and our `User-Agent` are accepted on writes | Use the standard library | Hand-build the framing, then try a client-style `User-Agent` only if needed |
@@ -437,7 +440,7 @@ the test account.
 | W3 | The server accepts and keeps newer recipe fields such as `servings_min` | Round-trip all fields | Send the 3.3.1 fields only, and document possible loss |
 | W4 | A stale recipe write is accepted | Confirms last write wins, as designed | Handle the server's rejection as a conflict |
 | W5 | An item with an empty or unknown `aisle_uid` | Choose the aisle fallback | Require an existing aisle |
-| W6 | Re-posting a `deleted` object with `deleted: false` | Add undo for meals and items | Deleted stays final |
+| W6 | Re-posting a `deleted` object with `deleted: false` | Undo for grocery items is confirmed; add undo for meals once tested | Deleted stays final |
 | W7 | Line breaks sent as `\n` display properly (the Windows client sends `\r\n`) | Send `\n` | Send `\r\n` |
 | W8 | A write with `sync/notify/` reaches another device | Keep the sequence | Investigate before release |
 | W9 | A bulk POST with several objects is applied in full (one-item arrays are already confirmed) | Send batches in one POST | Send one POST per item |
@@ -525,7 +528,7 @@ before any path to changing account data exists.
 | Risk | Impact | Response |
 | --- | --- | --- |
 | Paprika changes its unofficial API | Tools break, or writes misbehave | Errors surface clearly, the kill switch stops writes, and the probe can recheck the API |
-| Paprika's terms restrict this use | Account or legal exposure | **Read the terms before the repository goes public.** They have not been reviewed. |
+| Paprika's terms restrict this use | Account or legal exposure | **Read the terms.** They have not been reviewed yet, and the repository is already public. |
 | A newer app stores data in fields 3.3.1 lacks | Possible data loss on update | Raw JSON round trip from a fresh read, gated by W3 |
 | Another client edits a recipe without changing its `hash` | Stale search results or cached body | Snapshot expiry after 30 days. Writes are unaffected, because they re-read from the API. |
 | A bad write reaches every device | Data damage | One object per write, no permanent recipe delete, and recipe backups |
