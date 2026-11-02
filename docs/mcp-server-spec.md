@@ -411,7 +411,24 @@ created itself, with names starting `MCP-TEST`. It also refuses to run unless bo
 hold, so that a wrong `.env` cannot reach the real account:
 
 - The `-confirm-account` flag repeats the configured email exactly.
-- The account holds no more than 25 recipes.
+- The account holds no more than 25 recipes, unless `-allow-real-account` is also given.
+
+**First run:** the account owner chose to run these once on the real account, on 2026-11-02,
+using test objects only. Server results are in the
+[API docs](paprika-api/notes/open-questions.md#write-questions). All later regression runs use
+the test account.
+
+| Check | Server result | Decision |
+| --- | --- | --- |
+| W1 | Accepted | Use the standard library and our own `User-Agent` |
+| W2 | Omitted fields were kept | Keep the whole-object rule, because this is undocumented |
+| W3 | Newer fields were accepted and kept | Round-trip all fields |
+| W4 | Stale writes were accepted | Last write wins, so keep `expected_hash` |
+| W5 | Empty and unknown aisles were stored, and a phone showed both under Miscellaneous | Resolve to an existing aisle ourselves, because the phone rewrote the unknown one |
+| W6 | Restoring works on the server, and a phone that had synced the delete showed the item again | Undo is possible for grocery items. Not added to the first release's tools until a meal is tested the same way |
+| W7 | `\n` and `\r\n` are both stored as sent, and both displayed as line breaks on a phone | Send `\n`, and check display on the Windows client with the test account |
+| W8 | `sync/notify/` accepted, and the writes reached a phone | Keep the sequence. We did not separate this from the phone's own sync |
+| W9 | Applied in full | Send batches in one POST |
 
 | # | Check | If it passes | If it fails |
 | --- | --- | --- | --- |
@@ -443,6 +460,8 @@ real backend we test against.
   results from the real account remain the evidence for real data shapes.
 - **Pacing:** test tools use the server's 250 ms pacing, because rate limits might apply per IP
   and affect the real account too.
+- **No load tests, ever.** Nothing in this project stress-tests Paprika's servers or probes for
+  rate limits, on any account. Scale tests use the fake server.
 - **Keep the accounts apart in the app:** W8 and the app checks need Paprika signed in to the
   test account. Do this on a device or profile with no real data, because we have not tested
   what the app does with local recipes when it switches accounts.
@@ -454,9 +473,9 @@ real backend we test against.
   request. Tests assert gzip, multipart, the whole-object rule, new hashes, `notify` calls,
   and that write tools are absent when disabled. It also produces errors on HTTP 200, 401s,
   503s, and timeouts.
-- **Fake modes for unknowns:** until a write check settles a behavior, the fake supports each
-  possible outcome, such as an omitted field being kept or blanked, and our code must be safe
-  under all of them. Once settled, the fake follows the result.
+- **Fake behavior follows the write checks.** It accepts stale writes and unknown references,
+  and keeps omitted fields, as the real server did. Code must still be safe if an omitted field
+  is blanked, because that behavior is undocumented.
 - **Format tests** compare our requests with synthetic fixtures shaped like the captured client
   traffic, covering structure, field set, and encoding.
 - **Index store tests** run one shared table of cases against `filesystem` and `s3`: absent,
@@ -482,7 +501,8 @@ real backend we test against.
 - **Log tests** assert secrets and recipe text never appear in log output.
 - **Fixtures are synthetic.** Nothing captured from a real account enters the repository.
 - **CI never contacts Paprika.** Live checks run by hand, against the test account.
-- **The real account gets no test writes.** Its first writes come at M6, through ordinary use.
+- **Regression testing never uses the real account.** Apart from the one first run of the write
+  checks, its next writes come at M6, through ordinary use.
 
 ## Delivery Plan
 
@@ -493,7 +513,7 @@ Each milestone is one or more pull requests, and is independently useful.
 | M1 | Inbound auth, limits, and hardening | `/mcp` rejects unauthenticated requests, with `ping` still working when authenticated |
 | M2 | Paprika client, read side | Login, reads, pacing, and retries pass against the fake server and one manual run on the test account |
 | M3 | Mirror, index store, and read tools | All three snapshot modes pass their tests, and all read tools work against the test account, deployed read-only, with the production overlay changed to one replica and `Recreate` |
-| M4 | Write checks | W1 to W9 are run on the test account, the API docs and this spec are updated with results, and the probe's docs describe its new mode, with GET-only remaining the default |
+| M4 | Write checks | W1 to W9 are complete, including app confirmation, and repeatable on the test account, the API docs and this spec are updated with results, and the probe's docs describe its new mode, with GET-only remaining the default |
 | M5 | Write tools | Recipes, then meals, then groceries, each checked in the app on the test account with `MCP-TEST` objects |
 | M6 | Production release | Switched to the real account read-only and checked, a fresh export of meal plans and grocery lists saved to a private local file, then writes enabled, token rotated, and audit logs reviewed after first use |
 

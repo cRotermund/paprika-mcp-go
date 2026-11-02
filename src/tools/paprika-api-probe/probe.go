@@ -41,15 +41,21 @@ var (
 
 var errWriteBlocked = errors.New("probe blocked a request that is not read-only")
 
+// writeRoute lists the only routes that write-checks mode may POST to.
+var writeRoute = regexp.MustCompile(`^` + syncPrefix + `(groceries|grocerylists|meals|notify|recipe/[^/]+)/$`)
+
 // readOnlyTransport makes the read-only guarantee structural: the only non-GET
-// request that can leave the process is the login.
+// request that can leave the process is the login, unless allowWrites opens the
+// routes in writeRoute.
 type readOnlyTransport struct {
-	next http.RoundTripper
+	next        http.RoundTripper
+	allowWrites bool
 }
 
 func (t readOnlyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	isLogin := req.Method == http.MethodPost && req.URL.Path == loginPath
-	if req.Method != http.MethodGet && !isLogin {
+	isWrite := t.allowWrites && req.Method == http.MethodPost && writeRoute.MatchString(req.URL.Path)
+	if req.Method != http.MethodGet && !isLogin && !isWrite {
 		return nil, fmt.Errorf("%w: %s %s", errWriteBlocked, req.Method, req.URL.Path)
 	}
 	return t.next.RoundTrip(req)
@@ -127,13 +133,21 @@ type fetchResult struct {
 	apiErr          *apiError
 }
 
+func (p *prober) pause(ctx context.Context) error {
+	if p.delay <= 0 {
+		return nil
+	}
+	select {
+	case <-time.After(p.delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (p *prober) fetch(ctx context.Context, path string) (*fetchResult, error) {
-	if p.delay > 0 {
-		select {
-		case <-time.After(p.delay):
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	if err := p.pause(ctx); err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
@@ -143,6 +157,11 @@ func (p *prober) fetch(ctx context.Context, path string) (*fetchResult, error) {
 	req.Header.Set("Authorization", "Bearer "+p.token)
 	req.Header.Set("User-Agent", userAgent)
 
+	return p.send(req)
+}
+
+// send performs one request and decodes the API's response envelope.
+func (p *prober) send(req *http.Request) (*fetchResult, error) {
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, err

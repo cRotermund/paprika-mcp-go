@@ -58,8 +58,20 @@ destructive: (Client)
 | **Unknown `list_uid`** | **Marks the item deleted** |
 | Empty `list_uid` | Assigns the default list |
 
-**Writing an item with an invalid `list_uid` can cause another device to delete
-it.** Always verify the list exists before writing. (Inferred)
+The server does not validate these references: it stored items with an empty or unknown
+`aisle_uid` and an unknown `list_uid` as sent. (Live)
+
+After a phone app synced those test items: (Live)
+
+- The unknown `aisle_uid` item appeared under Miscellaneous, and the app re-uploaded it with
+  that aisle.
+- The empty `aisle_uid` item also appeared under Miscellaneous, but the server's copy was
+  unchanged when re-read.
+- **The unknown `list_uid` item disappeared from the server's list, which fits the client
+  behavior above.** Always verify the list exists before writing.
+
+The app groups items by `aisle_uid`, not the `aisle` text: valid items with a different `aisle`
+value appeared under the aisle that `aisle_uid` names.
 
 ## Grocery Aisles (`groceryaisles`)
 

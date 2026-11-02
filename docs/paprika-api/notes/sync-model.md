@@ -108,7 +108,9 @@ The server stops listing deleted objects: a recipe, a meal, and a grocery item p
 with `"deleted": true` no longer counted in later lists, and no listed object has a
 `deleted` key. (Capture, Live)
 
-The server's retention and whether a deleted object can be restored are unknown.
+Re-posting a deleted grocery item or meal with `"deleted": false` lists it again. A phone
+that had already synced a grocery item's delete showed the item again. (Live) How long the
+server retains deleted objects is unknown.
 Recipes also have a separate, recoverable trash. See [recipes](recipes.md#delete).
 
 ## Hashes
@@ -129,8 +131,12 @@ differently, so compare hashes as opaque values. (Inferred)
 
 Only recipes send `hash` when uploading. Meal and grocery objects omit it. (Capture)
 
-A recipe write that does not change `hash` would likely not be picked up by other
-devices, because they re-download a recipe only when its hash differs. (Inferred)
+The server stores whatever `hash` it is sent, in either case, and does not require a
+new one. (Live) **A recipe write that does not change `hash` is not picked up by a device
+that already holds the recipe:** a phone kept the old text through a sync that applied other
+changes, so the device and server then disagree. A later edit with a new `hash` did reach
+the phone, though it needed an app restart to reappear in the trash view. (Live) Always send
+a new `hash`.
 
 ## Conflicts
 
@@ -138,8 +144,9 @@ devices, because they re-download a recipe only when its hash differs. (Inferred
 carry no version or expected hash. Locally modified objects are protected from
 the download, then uploaded over whatever the server has, so the last write wins.
 
-The server could reject stale writes on its own, but nothing in the client
-suggests it. (Inferred)
+The server does not reject stale writes: an upload carrying an older `hash` replaced
+newer content and restored that older `hash`. (Live) A consumer that wants protection
+must compare hashes itself, immediately before writing.
 
 ## Counters
 
@@ -170,8 +177,9 @@ are enough.
 ## Implications for an API Client
 
 1. Read the latest copy of an object immediately before modifying it.
-2. Send the complete object, including keys you do not model. Fields you omit may
-   be blanked. (Inferred)
+2. Send the complete object, including keys you do not model. The server kept omitted
+   fields when tested (Live), but clients replace their local copy from what they download,
+   and this behavior is undocumented.
 3. Generate a new `hash` when writing a recipe.
 4. Call `sync/notify/` after a batch of writes.
 5. Pace requests, and treat unexplained timeouts as a possible rate block.
