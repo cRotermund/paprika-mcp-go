@@ -193,7 +193,7 @@ paths:
       operationId: notifyDevices
       summary: Tell other devices to sync
       description: Has no request body. The client calls this after a sync that uploaded something.
-      x-evidence: capture
+      x-evidence: live
       responses:
         '200':
           $ref: '#/components/responses/WriteResult'
@@ -264,7 +264,7 @@ paths:
         - **Permanently delete:** set `deleted: true`. Assume this cannot be undone.
 
         A photo adds a second part named `photo_upload`, which is not documented here.
-      x-evidence: capture
+      x-evidence: live
       requestBody:
         required: true
         description: A part named `data`, holding one gzip-compressed JSON `RecipeUpload` object.
@@ -363,7 +363,7 @@ paths:
         Send the whole meal each time. Change `date` to move it, or set `deleted: true` to
         delete it. Use only `recipe_uid` and `type_uid` values that exist, because other
         devices may silently change invalid ones.
-      x-evidence: capture
+      x-evidence: live
       requestBody:
         required: true
         description: A part named `data`, holding a gzip-compressed JSON array of `MealUpload` objects.
@@ -466,7 +466,7 @@ paths:
 
         **Verify that `list_uid` exists first.** Other devices may mark an item with an unknown
         list as deleted.
-      x-evidence: capture
+      x-evidence: live
       requestBody:
         required: true
         description: A part named `data`, holding a gzip-compressed JSON array of `GroceryItemUpload` objects.
@@ -514,7 +514,7 @@ paths:
       tags: [Grocery lists]
       operationId: saveGroceryLists
       summary: Add, update, or delete grocery lists
-      x-evidence: capture
+      x-evidence: live
       requestBody:
         required: true
         description: A part named `data`, holding a gzip-compressed JSON array of `GroceryListUpload` objects.

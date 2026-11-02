@@ -46,6 +46,9 @@ A new item from the client sent its text in both `name` and `ingredient`, with e
 `quantity` and `instruction`, and that was accepted. (Capture) Use that form for items
 without separate parsed values. (Inferred)
 
+The server kept `quantity` and `instruction` when a later upload of the item omitted them.
+(Live) Still send the whole item, because this behavior is undocumented.
+
 ### Reference Handling
 
 The client handles bad references during download, and some outcomes are

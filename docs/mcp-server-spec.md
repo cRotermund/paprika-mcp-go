@@ -528,7 +528,7 @@ before any path to changing account data exists.
 | Risk | Impact | Response |
 | --- | --- | --- |
 | Paprika changes its unofficial API | Tools break, or writes misbehave | Errors surface clearly, the kill switch stops writes, and the probe can recheck the API |
-| Paprika's terms restrict this use | Account or legal exposure | **Read the terms.** They have not been reviewed yet, and the repository is already public. |
+| Paprika's terms restrict this use | Account or legal exposure | **Read the terms.** They have not been reviewed yet. The repository is private to limit this risk, and it was public for a short time before that. |
 | A newer app stores data in fields 3.3.1 lacks | Possible data loss on update | Raw JSON round trip from a fresh read, gated by W3 |
 | Another client edits a recipe without changing its `hash` | Stale search results or cached body | Snapshot expiry after 30 days. Writes are unaffected, because they re-read from the API. |
 | A bad write reaches every device | Data damage | One object per write, no permanent recipe delete, and recipe backups |
