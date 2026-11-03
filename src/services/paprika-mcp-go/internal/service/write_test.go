@@ -155,7 +155,7 @@ func str(v string) *string { return &v }
 
 func TestWritesNeedAWriter(t *testing.T) {
 	st := testsupport.NewStack(t, nil, seed)
-	readOnly := service.New(st.Mirror, nil)
+	readOnly := service.New(st.Cache, nil)
 	_, err := readOnly.CreateRecipe(context.Background(), service.RecipeFields{Name: str("X")})
 	if kind(t, err) != service.KindInternal {
 		t.Fatalf("error = %v", err)
@@ -201,12 +201,12 @@ func TestCreateRecipe(t *testing.T) {
 	}
 	notifiedAfterPost(t, st.Fake)
 
-	// The mirror knows the recipe without another read of the list.
+	// The cache knows the recipe without another read of the list.
 	page, err := st.Service.SearchRecipes(ctx, service.SearchParams{Query: "lentil"})
 	if err != nil || len(page.Items) != 1 || page.Items[0].UID != res.Recipe.UID {
 		t.Fatalf("search = %+v, %v", page.Items, err)
 	}
-	if e, ok := st.Mirror.IndexEntry(res.Recipe.UID); !ok || e.Hash != res.Recipe.Hash {
+	if e, ok := st.Cache.IndexEntry(res.Recipe.UID); !ok || e.Hash != res.Recipe.Hash {
 		t.Errorf("index entry = %+v, %v", e, ok)
 	}
 }
@@ -252,7 +252,7 @@ func TestCreateRecipeUnknownCategory(t *testing.T) {
 func TestUpdateRecipeRereadsAndKeepsEverything(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
 	ctx := context.Background()
-	// Another device changed the recipe after the mirror read it.
+	// Another device changed the recipe after the cache read it.
 	live := testsupport.Recipe("R1", "Tomato Soup", "tomatoes\ncream", "CAT-SOUP")
 	live["notes"] = "added on the phone"
 	live["photo"] = "PHOTO-BYTES"
@@ -298,7 +298,7 @@ func TestUpdateRecipeRereadsAndKeepsEverything(t *testing.T) {
 	}
 	notifiedAfterPost(t, st.Fake)
 
-	if e, _ := st.Mirror.IndexEntry("R1"); e == nil || e.Hash != res.Recipe.Hash || e.Rating != 4 {
+	if e, _ := st.Cache.IndexEntry("R1"); e == nil || e.Hash != res.Recipe.Hash || e.Rating != 4 {
 		t.Errorf("index entry = %+v", e)
 	}
 	got, err := st.Service.GetRecipe(ctx, "R1")
@@ -518,8 +518,8 @@ func TestNotifyFailureIsSuccessWithWarning(t *testing.T) {
 	if stored, _ := st.Fake.StoredRecipe("R1"); stored["rating"] != json.Number("3") {
 		t.Errorf("stored rating = %v", stored["rating"])
 	}
-	if e, _ := st.Mirror.IndexEntry("R1"); e == nil || e.Rating != 3 {
-		t.Error("the mirror was not updated")
+	if e, _ := st.Cache.IndexEntry("R1"); e == nil || e.Rating != 3 {
+		t.Error("the cache was not updated")
 	}
 	if !strings.Contains(logs.String(), "outcome=ok_notify_failed") {
 		t.Errorf("audit log:\n%s", logs)
@@ -807,7 +807,7 @@ func TestUpdateMeal(t *testing.T) {
 	notifiedAfterPost(t, st.Fake)
 	list, _ := st.Service.ListMeals(ctx, "2030-03-21", "2030-03-21", 0, "")
 	if len(list.Items) != 1 || list.Items[0].Name != "New name" || list.Items[0].MealType != "Breakfast" {
-		t.Errorf("mirror view = %+v", list.Items)
+		t.Errorf("cache view = %+v", list.Items)
 	}
 
 	// Unlink, then repeat for no change.
@@ -907,7 +907,7 @@ func TestDeleteMeal(t *testing.T) {
 	list, _ := st.Service.ListMeals(ctx, "2030-03-10", "2030-03-10", 0, "")
 	for _, m := range list.Items {
 		if m.UID == "M-LINK" {
-			t.Error("the mirror still lists the deleted meal")
+			t.Error("the cache still lists the deleted meal")
 		}
 	}
 	if _, err := st.Service.DeleteMeal(ctx, "M-LINK"); kind(t, err) != service.KindNotFound {
@@ -1135,7 +1135,7 @@ func TestDeleteGroceryItem(t *testing.T) {
 	page, _ := st.Service.ListGroceryItems(ctx, "", false, 0, "")
 	for _, it := range page.Items {
 		if it.UID == "G-2" {
-			t.Error("the mirror still lists the deleted item")
+			t.Error("the cache still lists the deleted item")
 		}
 	}
 	if _, err := st.Service.DeleteGroceryItem(ctx, "G-2"); kind(t, err) != service.KindNotFound {

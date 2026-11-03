@@ -9,7 +9,7 @@ An MCP server exposing Paprika recipe data to MCP clients.
 | Component | Location | Responsibility |
 | --- | --- | --- |
 | paprika-mcp-go | `src/services/paprika-mcp-go/` | MCP server for Paprika recipe data, served over streamable HTTP at `/mcp` (or stdio with `-stdio`). |
-| paprika-mcp-go internals | `src/services/paprika-mcp-go/internal/` | `auth`, `middleware`, and `handler` guard `/mcp`; `paprikaclient` is the only code that calls Paprika; `mirror` keeps the recipe index and small lists; `indexstore` saves the index snapshot; `service` and `mcpserver` implement the read tools. |
+| paprika-mcp-go internals | `src/services/paprika-mcp-go/internal/` | `auth`, `middleware`, and `handler` guard `/mcp`; `paprikaclient` is the only code that calls Paprika; `cache` keeps the recipe index, a recent-recipe body cache, and small lists; `indexstore` saves the cache's recipe index snapshot; `service` and `mcpserver` implement the read tools. |
 | paprika-api-probe | `src/tools/paprika-api-probe/` | Local exploratory tool that checks `docs/paprika-api` against the live Paprika API. Not deployed. |
 
 ## Conventions
@@ -30,7 +30,7 @@ Kubernetes manifests live under `infra/k8s/`:
 - `base/` holds the Deployment and Service for each deployed service.
 - `local/` retargets images to `localhost/` and sets `LOG_LEVEL=DEBUG`.
 - `prod/` uses the `latest` GHCR images and sets the namespace and pull policy. The service
-  runs one replica with the `Recreate` strategy, because the mirror lives in the process. See
+  runs one replica with the `Recreate` strategy, because the cache lives in the process. See
   `infra/k8s/prod/README.md`.
 
 ## Planned Work

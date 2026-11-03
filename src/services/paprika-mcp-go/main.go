@@ -16,11 +16,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/auth"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/config"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/handler"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/indexstore"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mcpserver"
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mirror"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/service"
 )
@@ -79,7 +79,7 @@ func main() {
 	} else {
 		err = app.runHTTP(ctx, cfg)
 	}
-	stop() // also stops the mirror when the server failed before a signal
+	stop() // also stops the cache when the server failed before a signal
 	app.shutdown()
 	if err != nil {
 		logger.Error("server failed", "error", err)
@@ -90,19 +90,19 @@ func main() {
 }
 
 // app holds the pieces shared by both transports: the Paprika client, the
-// mirror, the snapshot saver, and the MCP server built on them.
+// cache, the snapshot saver, and the MCP server built on them.
 type app struct {
 	logger *slog.Logger
 	server *mcp.Server
 
-	mirrorDone chan struct{}
-	saverDone  chan struct{}
-	stopSaver  context.CancelFunc
+	cacheDone chan struct{}
+	saverDone chan struct{}
+	stopSaver context.CancelFunc
 }
 
-// newApp builds client -> mirror -> service -> MCP server and starts the mirror
-// loading in the background. ctx stops the mirror; the saver stops in shutdown
-// so that its final save follows the mirror's last change.
+// newApp builds client -> cache -> service -> MCP server and starts the cache
+// loading in the background. ctx stops the cache; the saver stops in shutdown
+// so that its final save follows the cache's last change.
 func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app, error) {
 	client, err := paprikaclient.New(paprikaclient.Config{
 		Email:     cfg.PaprikaEmail,
@@ -114,22 +114,22 @@ func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app,
 		return nil, fmt.Errorf("could not build Paprika client: %w", err)
 	}
 
-	cfg.Index.FormatVersion = mirror.SnapshotFormatVersion
+	cfg.Index.FormatVersion = cache.SnapshotFormatVersion
 	store, err := indexstore.New(ctx, cfg.Index)
 	if err != nil {
 		return nil, fmt.Errorf("could not set up index snapshot store: %w", err)
 	}
 
-	mir := mirror.New(client, mirror.Options{Logger: logger, Store: store})
-	saver := indexstore.NewSaver(store, mir.Snapshot, indexstore.SaverConfig{Logger: logger})
-	mir.SetOnChange(saver.MarkDirty)
+	c := cache.New(client, cache.Options{Logger: logger, Store: store})
+	saver := indexstore.NewSaver(store, c.Snapshot, indexstore.SaverConfig{Logger: logger})
+	c.SetOnChange(saver.MarkDirty)
 
-	svc := service.New(mir, logger, service.WithWriter(client))
+	svc := service.New(c, logger, service.WithWriter(client))
 	a := &app{
-		logger:     logger,
-		server:     mcpserver.New(svc, mcpserver.Options{Logger: logger, WritesEnabled: cfg.WritesEnabled, CallTimeout: mcpserver.DefaultCallTimeout}),
-		mirrorDone: make(chan struct{}),
-		saverDone:  make(chan struct{}),
+		logger:    logger,
+		server:    mcpserver.New(svc, mcpserver.Options{Logger: logger, WritesEnabled: cfg.WritesEnabled, CallTimeout: mcpserver.DefaultCallTimeout}),
+		cacheDone: make(chan struct{}),
+		saverDone: make(chan struct{}),
 	}
 
 	saverCtx, stopSaver := context.WithCancel(context.Background())
@@ -139,15 +139,15 @@ func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app,
 		saver.Run(saverCtx)
 	}()
 	go func() {
-		defer close(a.mirrorDone)
-		mir.Run(ctx)
+		defer close(a.cacheDone)
+		c.Run(ctx)
 	}()
 
 	logger.Info("recipe index loading in the background", "index_store", string(cfg.Index.Mode))
 	return a, nil
 }
 
-// shutdown waits for the mirror to stop, then stops the saver, which makes its
+// shutdown waits for the cache to stop, then stops the saver, which makes its
 // final save. Each wait is bounded.
 func (a *app) shutdown() {
 	wait := func(done <-chan struct{}, what string) {
@@ -157,7 +157,7 @@ func (a *app) shutdown() {
 			a.logger.Warn("timed out waiting for shutdown", "component", what)
 		}
 	}
-	wait(a.mirrorDone, "mirror")
+	wait(a.cacheDone, "cache")
 	a.stopSaver()
 	wait(a.saverDone, "index saver")
 }

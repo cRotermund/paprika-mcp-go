@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mirror"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -57,7 +57,7 @@ func notFound(format string, args ...any) *Error {
 	return &Error{Kind: KindNotFound, Message: fmt.Sprintf(format, args...)}
 }
 
-// mapError turns an error from the mirror or client into a service *Error. A
+// mapError turns an error from the cache or client into a service *Error. A
 // canceled request is returned as is.
 func (s *Service) mapError(op string, err error) error {
 	if err == nil {
@@ -68,7 +68,7 @@ func (s *Service) mapError(op string, err error) error {
 		return err
 	}
 
-	var loading *mirror.LoadingError
+	var loading *cache.LoadingError
 	switch {
 	case errors.As(err, &loading):
 		msg := "The recipe index is still loading after startup, so search is not available yet. Retry in a minute"

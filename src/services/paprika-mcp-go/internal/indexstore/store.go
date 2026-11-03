@@ -1,5 +1,6 @@
-// Package indexstore persists an opaque index snapshot to nothing, a local
-// file, or an S3 object. It knows nothing about what the snapshot contains.
+// Package indexstore saves the cache's recipe index snapshot to nothing, a local
+// file, or an S3 object. It treats the snapshot as opaque and knows nothing about
+// what it contains.
 package indexstore
 
 import (

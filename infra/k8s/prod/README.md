@@ -27,7 +27,7 @@ kubectl kustomize infra/k8s/prod
 ## Replicas and secrets
 
 The base Deployment runs one replica with the `Recreate` strategy, and the
-overlay must not change that: the write lock and the recipe mirror live in the
+overlay must not change that: the write lock and the recipe cache live in the
 process, so two pods could interleave writes.
 
 The Deployment reads `MCP_TOKEN_SHA256`, `PAPRIKA_EMAIL`, and `PAPRIKA_PASSWORD` from the `paprika-mcp-go` Secret. The

@@ -1,4 +1,4 @@
-package mirror
+package cache
 
 import (
 	"context"
@@ -42,12 +42,12 @@ type hit struct {
 // text it returns every recipe passing the filters in name order. The entries
 // are shared and must not be modified. While the index is loading it returns a
 // [*LoadingError].
-func (m *Mirror) Search(ctx context.Context, q Query) ([]*IndexEntry, error) {
-	if p := m.Progress(); !p.Ready {
+func (c *Cache) Search(ctx context.Context, q Query) ([]*IndexEntry, error) {
+	if p := c.Progress(); !p.Ready {
 		return nil, &LoadingError{Done: p.Done, Total: p.Total}
 	}
-	if err := m.ensureRecipesFresh(ctx); err != nil {
-		m.log.Warn("could not check for recipe changes; searching held index", "error", err)
+	if err := c.ensureRecipesFresh(ctx); err != nil {
+		c.log.Warn("could not check for recipe changes; searching held index", "error", err)
 	}
 
 	qwords := words(q.Text)
@@ -57,22 +57,22 @@ func (m *Mirror) Search(ctx context.Context, q Query) ([]*IndexEntry, error) {
 
 	var categoryWords map[string][]string
 	if len(qwords) > 0 {
-		cats, err := m.Categories(ctx)
+		cats, err := c.Categories(ctx)
 		if err != nil {
 			return nil, err
 		}
 		categoryWords = make(map[string][]string, len(cats))
-		for _, c := range cats {
-			categoryWords[c.Value.UID] = words(c.Value.Name)
+		for _, cat := range cats {
+			categoryWords[cat.Value.UID] = words(cat.Value.Name)
 		}
 	}
 
-	m.mu.RLock()
-	all := make([]*IndexEntry, 0, len(m.index))
-	for _, e := range m.index {
+	c.mu.RLock()
+	all := make([]*IndexEntry, 0, len(c.index))
+	for _, e := range c.index {
 		all = append(all, e)
 	}
-	m.mu.RUnlock()
+	c.mu.RUnlock()
 
 	hits := make([]hit, 0, len(all))
 	for _, e := range all {

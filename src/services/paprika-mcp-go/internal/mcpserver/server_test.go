@@ -12,8 +12,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mcpserver"
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mirror"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/service"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/testsupport"
@@ -448,7 +448,7 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 func TestStillLoadingIsRetryableToolError(t *testing.T) {
 	fake := fakepaprika.New(t)
 	seed(fake)
-	m := mirror.New(testsupport.Client(t, fake, nil), mirror.Options{})
+	m := cache.New(testsupport.Client(t, fake, nil), cache.Options{})
 	s := connect(t, service.New(m, nil), mcpserver.Options{})
 
 	res := call(t, s, "search_recipes", map[string]any{"query": "soup"}, nil)

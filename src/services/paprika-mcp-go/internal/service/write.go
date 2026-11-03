@@ -27,7 +27,7 @@ const (
 
 // Writer is the part of paprikaclient.Client that the write path uses. A
 // *paprikaclient.Client satisfies it. Writes read from the API, never from the
-// mirror, so that they start from the latest object.
+// cache, so that they start from the latest object.
 type Writer interface {
 	GetRecipe(ctx context.Context, uid string) (paprikaclient.Entry[paprikaclient.Recipe], error)
 	ListRecipes(ctx context.Context) ([]paprikaclient.RecipeRef, error)

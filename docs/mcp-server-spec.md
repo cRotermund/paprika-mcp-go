@@ -1,7 +1,7 @@
 # MCP Server Specification
 
 Status: draft for review, 2026-11-02. Built so far: inbound auth and limits (M1), the Paprika
-client (M2), the mirror, index store, and read tools (M3), and the write tools (M5: built and
+client (M2), the cache, index store, and read tools (M3), and the write tools (M5: built and
 tested against the fake server, not yet checked in the app on the test account).
 
 The upstream protocol is documented in [docs/paprika-api](paprika-api/README.md).
@@ -45,7 +45,7 @@ paprika-mcp-go  (one replica)
     |
     tools          inputs, outputs, annotations
     service        business rules, validation, write sequence
-    mirror         recipe index, body cache, small lists, search, change detection
+    cache          recipe index, body cache, small lists, search, change detection
     indexstore     optional index snapshot: none, filesystem, or S3
     paprikaclient  login, requests, gzip multipart, pacing
     |  HTTPS, Paprika token
@@ -59,9 +59,9 @@ All under `src/services/paprika-mcp-go/internal/`:
 | Package | Responsibility |
 | --- | --- |
 | `paprikaclient` | HTTP client. Knows routes, encoding, login, and errors. Holds no business rules. |
-| `mirror` | Recipe index, body cache, small lists, and search. Refreshes from status counters. |
+| `cache` | Recipe index, body cache, small lists, and search. Refreshes from status counters. |
 | `indexstore` | Loads and saves the index snapshot. Knows nothing about Paprika. |
-| `service` | Reads from the mirror. Runs the write sequence. Validates references. |
+| `service` | Reads from the cache. Runs the write sequence. Validates references. |
 | `mcpserver` | Registers tools and maps service results and errors to MCP. |
 | `auth` | Verifies inbound bearer tokens. |
 | `config` | Environment variables. |
@@ -79,7 +79,7 @@ Only `paprikaclient` calls the Paprika API. Only `mcpserver` knows about MCP.
 ### One Replica
 
 Run exactly **one replica with the `Recreate` deployment strategy**. The write lock and
-the mirror live in process, so two replicas could interleave writes. The server has no
+the cache live in process, so two replicas could interleave writes. The server has no
 need for high availability. The base Deployment sets one replica with `Recreate`, and the
 production overlay must not change that.
 
@@ -105,10 +105,11 @@ production overlay must not change that.
 - **Responses:** capped at a fixed size, to protect the process.
 - **Redirects:** not followed, so the token cannot reach another host.
 
-## Local Mirror
+## Local Cache
 
-The API has no search and no filters, so the server needs its own view of the data. It
-does not need every recipe body in memory.
+The API has no search and no filters, so the server keeps its own cache of the data. It
+does not hold every recipe body. Everything in the cache is disposable: writes bypass it and
+re-read from Paprika, and startup corrects it.
 
 | Data | Held in memory | Source of a miss |
 | --- | --- | --- |
@@ -130,7 +131,7 @@ does not need every recipe body in memory.
 - **Search:** case-insensitive token matching over name, categories, source, and
   ingredients, with name matches ranked first. Words that appear only in directions or
   notes are not searchable. This needs no new dependency.
-- **`/health` is independent of the mirror and of Paprika,** so a Paprika outage does not
+- **`/health` is independent of the cache and of Paprika,** so a Paprika outage does not
   restart the pod.
 
 ### Startup
@@ -152,7 +153,7 @@ The snapshot is a gzip-compressed JSON file holding the index, a format version,
 time it was saved. It is only an optimization, and the comparison at startup corrects it.
 Only the recipe index is saved, because the other resources take one request each to reload.
 
-`INDEX_STORE` selects where it lives. Nothing about the mirror changes between modes.
+`INDEX_STORE` selects where it lives. Nothing about the cache changes between modes.
 
 | Mode | Behavior | Intended for |
 | --- | --- | --- |
@@ -172,7 +173,7 @@ Rules for every mode:
 - **Expiry:** the comparison at startup assumes every edit changes a recipe's `hash`. We
   captured this from the Windows client only, and a missed edit would otherwise survive
   restarts. A snapshot more than 30 days past its last full read still serves searches, but every recipe is
-  read again in the background. The mirror does the same in a long-running process.
+  read again in the background. The cache does the same in a long-running process.
 - **Bad configuration stops startup:** an unknown mode, or a mode missing its required
   settings, is a startup error, so that a typo cannot silently cause full loads.
 - **S3 client:** uses `aws-sdk-go-v2` and its default credential chain, so a deployment can
@@ -183,7 +184,7 @@ Rules for every mode:
 Every write follows the same steps, one at a time under a process-wide lock:
 
 1. **Validate input** before any network call.
-2. **Read the current object from the API,** not the mirror. For bulk resources this means
+2. **Read the current object from the API,** not the cache. For bulk resources this means
    downloading the list and finding the `uid`.
 3. **Apply only the requested changes** to the raw object.
 4. **Validate references** against current data.
@@ -192,7 +193,7 @@ Every write follows the same steps, one at a time under a process-wide lock:
 6. **POST only the changed objects.** Bulk routes receive an array, and recipes go one at a
    time.
 7. **Call `sync/notify/`** so other devices pick up the change.
-8. **Update the mirror,** including the index entry and body cache, and return the resulting
+8. **Update the cache,** including the index entry and body cache, and return the resulting
    object.
 9. **Write an audit log entry.**
 
@@ -419,7 +420,7 @@ Tool errors state what happened and what to do next:
 
 | Situation | Tool result | Retry guidance |
 | --- | --- | --- |
-| Mirror still loading | Progress message | Retry shortly |
+| Cache still loading | Progress message | Retry shortly |
 | Unknown `uid` or reference | Names the bad value | Look it up first |
 | `expected_hash` mismatch | Reports the conflict | Re-read and re-apply |
 | Paprika unavailable or rate blocked | Temporary failure | Retry later |
@@ -543,7 +544,7 @@ Each milestone is one or more pull requests, and is independently useful.
 | --- | --- | --- |
 | M1 | Inbound auth, limits, and hardening | `/mcp` rejects unauthenticated requests, with `ping` still working when authenticated |
 | M2 | Paprika client, read side | Login, reads, pacing, and retries pass against the fake server and one manual run on the test account |
-| M3 | Mirror, index store, and read tools | All three snapshot modes pass their tests, and all read tools work against the test account, deployed read-only, with the production overlay changed to one replica and `Recreate` |
+| M3 | Cache, index store, and read tools | All three snapshot modes pass their tests, and all read tools work against the test account, deployed read-only, with the production overlay changed to one replica and `Recreate` |
 | M4 | Write checks | W1 to W9 are complete, including app confirmation, and repeatable on the test account, the API docs and this spec are updated with results, and the probe's docs describe its new mode, with GET-only remaining the default |
 | M5 | Write tools | Recipes, then meals, then groceries, each checked in the app on the test account with `MCP-TEST` objects |
 | M6 | Production release | Switched to the real account read-only and checked, a fresh export of meal plans and grocery lists saved to a private local file, then writes enabled, token rotated, and audit logs reviewed after first use |

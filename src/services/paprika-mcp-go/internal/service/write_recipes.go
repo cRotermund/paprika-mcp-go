@@ -289,7 +289,7 @@ func (s *Service) setTrash(ctx context.Context, tool, uid string, trashed bool) 
 	return s.saveRecipe(ctx, tool, uid, o, []string{"in_trash"})
 }
 
-// readRecipe reads the current recipe from the API, not the mirror, and
+// readRecipe reads the current recipe from the API, not the cache, and
 // returns a copy of its raw object.
 func (s *Service) readRecipe(ctx context.Context, uid string) (paprikaclient.Object, error) {
 	entry, err := s.w.GetRecipe(ctx, uid)
@@ -307,7 +307,7 @@ func (s *Service) unchangedRecipe(ctx context.Context, tool, uid string, o papri
 	return RecipeWrite{Recipe: s.recipeDetail(ctx, recipeValue(o)), NoChange: true}
 }
 
-// saveRecipe gives the recipe a new hash, sends it, and updates the mirror.
+// saveRecipe gives the recipe a new hash, sends it, and updates the cache.
 func (s *Service) saveRecipe(ctx context.Context, tool, uid string, o paprikaclient.Object, changed []string) (RecipeWrite, error) {
 	mustSet(o, "hash", newHash())
 	mustSet(o, "deleted", false)
@@ -320,7 +320,7 @@ func (s *Service) saveRecipe(ctx context.Context, tool, uid string, o paprikacli
 	stored := o.Clone()
 	delete(stored, "deleted")
 	r := recipeValue(stored)
-	s.m.UpsertRecipe(paprikaclient.Entry[paprikaclient.Recipe]{Raw: stored, Value: r})
+	s.cache.UpsertRecipe(paprikaclient.Entry[paprikaclient.Recipe]{Raw: stored, Value: r})
 	return RecipeWrite{Recipe: s.recipeDetail(ctx, r), Changed: changed, Warning: warning}, nil
 }
 

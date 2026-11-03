@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mirror"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/service"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/testsupport"
@@ -417,8 +417,8 @@ func TestErrorMapping(t *testing.T) {
 func TestStillLoadingError(t *testing.T) {
 	fake := fakepaprika.New(t)
 	seed(fake)
-	m := mirror.New(testsupport.Client(t, fake, nil), mirror.Options{})
-	svc := service.New(m, nil)
+	c := cache.New(testsupport.Client(t, fake, nil), cache.Options{})
+	svc := service.New(c, nil)
 	_, err := svc.SearchRecipes(context.Background(), service.SearchParams{Query: "soup"})
 	if err == nil || kind(t, err) != service.KindLoading || !strings.Contains(err.Error(), "still loading") {
 		t.Fatalf("error = %v, want a loading error", err)

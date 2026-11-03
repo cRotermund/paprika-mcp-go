@@ -1,5 +1,5 @@
 // Package service holds the read operations behind the MCP tools: input
-// validation, reference resolution, pagination, and mapping of mirror and
+// validation, reference resolution, pagination, and mapping of cache and
 // client errors to a small set of [Error] kinds. It knows nothing about MCP.
 package service
 
@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mirror"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -35,8 +35,8 @@ const (
 // Service implements the read and write operations. It is safe for concurrent
 // use.
 type Service struct {
-	m   *mirror.Mirror
-	log *slog.Logger
+	cache *cache.Cache
+	log   *slog.Logger
 
 	// w is nil on a read-only service.
 	w     Writer
@@ -53,12 +53,12 @@ func WithWriter(w Writer) Option {
 	return func(s *Service) { s.w = w }
 }
 
-// New returns a Service that reads through m.
-func New(m *mirror.Mirror, logger *slog.Logger, opts ...Option) *Service {
+// New returns a Service that reads through c.
+func New(c *cache.Cache, logger *slog.Logger, opts ...Option) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Service{m: m, log: logger, wlock: make(chan struct{}, 1), now: time.Now}
+	s := &Service{cache: c, log: logger, wlock: make(chan struct{}, 1), now: time.Now}
 	for _, o := range opts {
 		o(s)
 	}
@@ -140,7 +140,7 @@ func (s *Service) SearchRecipes(ctx context.Context, p SearchParams) (Page[Recip
 		return Page[RecipeSummary]{}, invalid("min_rating must be between 0 and 5.")
 	}
 
-	q := mirror.Query{Text: p.Query, Favorite: p.Favorite, MinRating: p.MinRating, IncludeTrashed: p.IncludeTrashed}
+	q := cache.Query{Text: p.Query, Favorite: p.Favorite, MinRating: p.MinRating, IncludeTrashed: p.IncludeTrashed}
 	cats, err := s.categoryNames(ctx)
 	if p.Category != "" {
 		if err != nil {
@@ -153,7 +153,7 @@ func (s *Service) SearchRecipes(ctx context.Context, p SearchParams) (Page[Recip
 		q.CategoryUID = uid
 	}
 
-	hits, err := s.m.Search(ctx, q)
+	hits, err := s.cache.Search(ctx, q)
 	if err != nil {
 		return Page[RecipeSummary]{}, s.mapError("search_recipes", err)
 	}
@@ -173,7 +173,7 @@ func (s *Service) SearchRecipes(ctx context.Context, p SearchParams) (Page[Recip
 
 // categoryNames returns category uid to name. An error means none are known.
 func (s *Service) categoryNames(ctx context.Context) (map[string]string, error) {
-	cats, err := s.m.Categories(ctx)
+	cats, err := s.cache.Categories(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func namesFor(uids []string, names map[string]string) []string {
 
 // resolveCategory accepts a category uid or a case-insensitive name.
 func (s *Service) resolveCategory(ctx context.Context, ref string) (string, error) {
-	cats, err := s.m.Categories(ctx)
+	cats, err := s.cache.Categories(ctx)
 	if err != nil {
 		return "", s.mapError("resolve_category", err)
 	}
@@ -265,7 +265,7 @@ func (s *Service) GetRecipe(ctx context.Context, uid string) (RecipeDetail, erro
 	if err := checkText("uid", uid, maxRefLen); err != nil {
 		return RecipeDetail{}, err
 	}
-	entry, err := s.m.Recipe(ctx, uid)
+	entry, err := s.cache.Recipe(ctx, uid)
 	if err != nil {
 		if isNotFound(err) {
 			return RecipeDetail{}, notFound("No recipe has the uid %q. Use search_recipes to find a valid uid.", uid)
@@ -275,7 +275,7 @@ func (s *Service) GetRecipe(ctx context.Context, uid string) (RecipeDetail, erro
 	return s.recipeDetail(ctx, entry.Value), nil
 }
 
-// recipeDetail converts a recipe, naming its categories from the mirror.
+// recipeDetail converts a recipe, naming its categories from the cache.
 func (s *Service) recipeDetail(ctx context.Context, r paprikaclient.Recipe) RecipeDetail {
 	names, nerr := s.categoryNames(ctx)
 	if nerr != nil {
@@ -313,7 +313,7 @@ type CategoryNode struct {
 // ListCategories returns the category tree flattened depth first: each
 // category follows its parent, siblings in display order.
 func (s *Service) ListCategories(ctx context.Context, limit int, cursor string) (Page[CategoryNode], error) {
-	cats, err := s.m.Categories(ctx)
+	cats, err := s.cache.Categories(ctx)
 	if err != nil {
 		return Page[CategoryNode]{}, s.mapError("list_categories", err)
 	}
@@ -386,11 +386,11 @@ func (s *Service) ListMeals(ctx context.Context, start, end string, limit int, c
 		return Page[MealSummary]{}, invalid("The date range is too long; ask for at most %d days at a time.", maxMealDays)
 	}
 
-	meals, err := s.m.Meals(ctx)
+	meals, err := s.cache.Meals(ctx)
 	if err != nil {
 		return Page[MealSummary]{}, s.mapError("list_meals", err)
 	}
-	types, err := s.m.MealTypes(ctx)
+	types, err := s.cache.MealTypes(ctx)
 	if err != nil {
 		return Page[MealSummary]{}, s.mapError("list_meals", err)
 	}
@@ -415,7 +415,7 @@ func (s *Service) ListMeals(ctx context.Context, start, end string, limit int, c
 		sum := MealSummary{UID: m.Value.UID, Date: day, Name: m.Value.Name, MealType: typeName}
 		if m.Value.RecipeUID != nil && *m.Value.RecipeUID != "" {
 			sum.RecipeUID = *m.Value.RecipeUID
-			sum.RecipeName = s.m.RecipeName(sum.RecipeUID)
+			sum.RecipeName = s.cache.RecipeName(sum.RecipeUID)
 		}
 		rows = append(rows, row{sum: sum, typeSort: typeOrder, order: m.Value.OrderFlag})
 	}
@@ -452,7 +452,7 @@ type NamedRef struct {
 // ListMealTypes returns the account's meal types in display order. An account
 // with none gets the four built-in types, flagged Builtin and without a uid.
 func (s *Service) ListMealTypes(ctx context.Context, limit int, cursor string) (Page[MealTypeInfo], error) {
-	types, err := s.m.MealTypes(ctx)
+	types, err := s.cache.MealTypes(ctx)
 	if err != nil {
 		return Page[MealTypeInfo]{}, s.mapError("list_meal_types", err)
 	}
@@ -470,11 +470,11 @@ type GroceryListSummary struct {
 
 // ListGroceryLists returns the grocery lists with item counts.
 func (s *Service) ListGroceryLists(ctx context.Context, limit int, cursor string) (Page[GroceryListSummary], error) {
-	lists, err := s.m.GroceryLists(ctx)
+	lists, err := s.cache.GroceryLists(ctx)
 	if err != nil {
 		return Page[GroceryListSummary]{}, s.mapError("list_grocery_lists", err)
 	}
-	items, err := s.m.Groceries(ctx)
+	items, err := s.cache.Groceries(ctx)
 	if err != nil {
 		return Page[GroceryListSummary]{}, s.mapError("list_grocery_lists", err)
 	}
@@ -521,7 +521,7 @@ func (s *Service) ListGroceryItems(ctx context.Context, list string, includePurc
 	if err := checkText("list", list, maxRefLen); err != nil {
 		return GroceryItemsPage{}, err
 	}
-	lists, err := s.m.GroceryLists(ctx)
+	lists, err := s.cache.GroceryLists(ctx)
 	if err != nil {
 		return GroceryItemsPage{}, s.mapError("list_grocery_items", err)
 	}
@@ -529,11 +529,11 @@ func (s *Service) ListGroceryItems(ctx context.Context, list string, includePurc
 	if err != nil {
 		return GroceryItemsPage{}, err
 	}
-	items, err := s.m.Groceries(ctx)
+	items, err := s.cache.Groceries(ctx)
 	if err != nil {
 		return GroceryItemsPage{}, s.mapError("list_grocery_items", err)
 	}
-	aisles, err := s.m.GroceryAisles(ctx)
+	aisles, err := s.cache.GroceryAisles(ctx)
 	if err != nil {
 		return GroceryItemsPage{}, s.mapError("list_grocery_items", err)
 	}
@@ -614,7 +614,7 @@ func pickList(lists []paprikaclient.Entry[paprikaclient.GroceryList], ref string
 
 // ListGroceryAisles returns the store aisles in display order.
 func (s *Service) ListGroceryAisles(ctx context.Context, limit int, cursor string) (Page[NamedRef], error) {
-	aisles, err := s.m.GroceryAisles(ctx)
+	aisles, err := s.cache.GroceryAisles(ctx)
 	if err != nil {
 		return Page[NamedRef]{}, s.mapError("list_grocery_aisles", err)
 	}

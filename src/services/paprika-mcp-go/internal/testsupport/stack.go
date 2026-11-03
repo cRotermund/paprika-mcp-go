@@ -6,17 +6,17 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/mirror"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/service"
 )
 
-// Stack is a fake Paprika with a client, mirror, and service wired to it.
+// Stack is a fake Paprika with a client, cache, and service wired to it.
 type Stack struct {
 	Fake    *fakepaprika.Server
 	Client  *paprikaclient.Client
-	Mirror  *mirror.Mirror
+	Cache   *cache.Cache
 	Service *service.Service
 }
 
@@ -38,9 +38,9 @@ func NewStackWith(tb testing.TB, logger *slog.Logger, seed func(*fakepaprika.Ser
 		seed(fake)
 	}
 	client := ClientWith(tb, fake, logger, tweak)
-	m := mirror.New(client, mirror.Options{Logger: logger})
-	if err := m.Sync(context.Background()); err != nil {
+	c := cache.New(client, cache.Options{Logger: logger})
+	if err := c.Sync(context.Background()); err != nil {
 		tb.Fatal(err)
 	}
-	return &Stack{Fake: fake, Client: client, Mirror: m, Service: service.New(m, logger, service.WithWriter(client))}
+	return &Stack{Fake: fake, Client: client, Cache: c, Service: service.New(c, logger, service.WithWriter(client))}
 }
