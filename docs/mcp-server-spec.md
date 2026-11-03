@@ -1,7 +1,8 @@
 # MCP Server Specification
 
-Status: draft for review, 2026-11-01. Only the `ping` tool, the `/mcp` and `/health`
-routes, `-stdio` mode, and basic configuration exist so far.
+Status: draft for review, 2026-11-02. Built so far: inbound auth and limits (M1), the Paprika
+client (M2), the mirror, index store, and read tools (M3), and the write tools (M5: built and
+tested against the fake server, not yet checked in the app on the test account).
 
 The upstream protocol is documented in [docs/paprika-api](paprika-api/README.md).
 This document covers what we build on top of it.
@@ -79,8 +80,8 @@ Only `paprikaclient` calls the Paprika API. Only `mcpserver` knows about MCP.
 
 Run exactly **one replica with the `Recreate` deployment strategy**. The write lock and
 the mirror live in process, so two replicas could interleave writes. The server has no
-need for high availability. The production overlay currently sets two replicas, so this
-must change.
+need for high availability. The base Deployment sets one replica with `Recreate`, and the
+production overlay must not change that.
 
 ## Paprika Client
 
@@ -93,8 +94,12 @@ must change.
 - **Pacing:** one request at a time across the process, with at least 250 ms between
   requests, or at most 240 per minute. This stays under the one unverified report of a
   block at about 300 connections per minute.
-- **Timeouts:** 30 seconds per request. After repeated timeouts, pause for 5 minutes,
-  because a rate block looks like a timeout.
+- **Timeouts:** 20 seconds per request (live testing saw grocery requests hang for 30
+  seconds, so a hung call costs 20 seconds, not 30, and is reported at that point).
+  After 3 consecutive timeouts, pause for 5 minutes, because a rate block looks like a
+  timeout. The per-call timeout must stay well below the inbound request timeout (see
+  Request Handling), because requests are served one at a time and a write makes several
+  calls.
 - **Errors:** always check for an `error` object, including on HTTP 200.
 - **`User-Agent`:** an honest `paprika-mcp-go/<version>`.
 - **Responses:** capped at a fixed size, to protect the process.
@@ -166,8 +171,8 @@ Rules for every mode:
   costs one full load.
 - **Expiry:** the comparison at startup assumes every edit changes a recipe's `hash`. We
   captured this from the Windows client only, and a missed edit would otherwise survive
-  restarts. A snapshot more than 30 days old still serves searches, but every recipe is read
-  again in the background.
+  restarts. A snapshot more than 30 days past its last full read still serves searches, but every recipe is
+  read again in the background. The mirror does the same in a long-running process.
 - **Bad configuration stops startup:** an unknown mode, or a mode missing its required
   settings, is a startup error, so that a typo cannot silently cause full loads.
 - **S3 client:** uses `aws-sdk-go-v2` and its default credential chain, so a deployment can
@@ -246,9 +251,19 @@ outputs use typed schemas.
 | `update_meal` | write | Move, rename, or re-link |
 | `delete_meal` | destructive | Removes a planned meal |
 
-Meal types are resolved from the account's own list, never from hard-coded numbers. Dates
-are `YYYY-MM-DD` in tool inputs, and are stored as midnight. Paprika dates have no time
-zone, so none is applied.
+Meal types are resolved from the account's own list by name, never from hard-coded numbers.
+A meal sends both the meal type's `uid` as `type_uid` and its `original_type` as the numeric
+`type`. Dates are `YYYY-MM-DD` in tool inputs, and are stored as midnight. Paprika dates
+have no time zone, so none is applied.
+
+A live test account had **no meal types**, and all of its meals had a null `type_uid` and
+only a numeric `type` (Live). So the server falls back to the numeric `type` with the names
+the other account used: 0 Breakfast, 1 Lunch, 2 Dinner, 3 Snacks (Inferred). When an
+account has no meal types, `list_meal_types` returns these four, flagged `builtin` and
+without a `uid`. `add_meals` and `update_meal` accept those names, send the number as `type`
+and a null `type_uid`, and validate `type_uid` only when they send one. `list_meals` names a
+meal's type by `type_uid`, then by matching `type` to an `original_type`, then by those
+defaults, and otherwise shows "Unknown (type N)".
 
 ### Grocery Lists
 
@@ -336,9 +351,22 @@ registered at all, so a read-only deployment has no write path.
 
 - **Order:** authentication runs first, before request bodies are parsed.
 - **Rate limits:** failed authentication is limited per client IP, and successful requests
-  are limited globally. The client IP comes from the load balancer's forwarding header,
-  which is trusted only because the service is reachable solely through it.
-- **Limits:** 1 MiB request bodies, and per-request timeouts.
+  are limited globally. The client IP is the rightmost hop of the load balancer's `X-Forwarded-For`
+  header, which the load balancer appends and a client cannot forge. It is trusted only because the
+  service is reachable solely through it.
+- **Limits:** 1 MiB request bodies, and a 90 second timeout per inbound request. The 90
+  seconds covers a write that waits behind one or two hung Paprika calls (20 seconds
+  each; three in a row trigger the pause) and then hangs on its own POST (20 seconds), with
+  margin. The HTTP server's write timeout is longer still, so the caller always gets a
+  response.
+- **Tool call deadline:** each tool call has its own 80 second deadline, shorter than the
+  request timeout. The MCP SDK runs tools under the session context, not the HTTP request's,
+  so the request deadline never reaches a tool. When the deadline passes, the tool returns
+  its usual error (temporarily unavailable for reads, outcome unknown for a write whose POST
+  was sent).
+- **Deadline fallback:** if the handler has still written nothing 5 seconds after the request
+  deadline, the server answers HTTP 503 with a short JSON-RPC error body, never an empty
+  response.
 - **`Origin`:** a request with an unknown `Origin` header is rejected. Requests with none,
   which is normal for server-side clients, are allowed.
 - **Routes:** only `/mcp` and `/health` exist. `/health` returns a fixed status and no

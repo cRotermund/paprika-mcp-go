@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "indexstore-test",
+      "credentials": [
+        {
+          "accessKey": "indexstore-test-access",
+          "secretKey": "indexstore-test-secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

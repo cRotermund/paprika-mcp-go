@@ -58,6 +58,7 @@ body, and counters rise by one per written object, including within a bulk POST.
 | How long do tokens last? | Observe over time. An invalid token returns HTTP 401 with "Invalid or expired credentials." and code 0 |
 | What are the rate limits? | Never test this, on any account; stay well below the reported 300 connections per minute |
 | What do the numeric error codes mean? | Observe; only code 0 seen so far |
+| Do grocery requests ever hang? | Yes (Live): on 2026-11-02 the test account saw `grocerylists` and `groceries` GET and POST requests sometimes hang for 30 s, about 6 times in 10 minutes at about 1 call per second. Writes that timed out had not landed when re-read |
 
 ## Could Decrypting the Client's Strings Help?
 
