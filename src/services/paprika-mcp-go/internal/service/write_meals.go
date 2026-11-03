@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -139,7 +139,7 @@ func (s *Service) AddMeals(ctx context.Context, inputs []MealInput) (AddMealsRes
 	if err != nil {
 		return AddMealsResult{}, err
 	}
-	s.cache.Invalidate(cache.ResourceMeals)
+	s.cache.Invalidate(caching.ResourceMeals)
 	return AddMealsResult{Items: results, Added: len(objects), Warning: warning}, nil
 }
 
@@ -322,7 +322,7 @@ func (s *Service) UpdateMeal(ctx context.Context, uid string, c MealChanges) (Me
 	if err != nil {
 		return MealWrite{}, err
 	}
-	s.cache.Invalidate(cache.ResourceMeals)
+	s.cache.Invalidate(caching.ResourceMeals)
 	return MealWrite{Meal: s.mealSummary(o, mts), Changed: changed, Warning: warning}, nil
 }
 
@@ -358,7 +358,7 @@ func (s *Service) DeleteMeal(ctx context.Context, uid string) (DeleteResult, err
 	if err != nil {
 		return DeleteResult{}, err
 	}
-	s.cache.Invalidate(cache.ResourceMeals)
+	s.cache.Invalidate(caching.ResourceMeals)
 	return DeleteResult{Before: before, Warning: warning}, nil
 }
 

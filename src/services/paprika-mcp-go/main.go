@@ -16,7 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/auth"
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/config"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/handler"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/indexstore"
@@ -114,17 +114,17 @@ func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app,
 		return nil, fmt.Errorf("could not build Paprika client: %w", err)
 	}
 
-	cfg.Index.FormatVersion = cache.SnapshotFormatVersion
+	cfg.Index.FormatVersion = caching.SnapshotFormatVersion
 	store, err := indexstore.New(ctx, cfg.Index)
 	if err != nil {
 		return nil, fmt.Errorf("could not set up index snapshot store: %w", err)
 	}
 
-	c := cache.New(client, cache.Options{Logger: logger, Store: store})
-	saver := indexstore.NewSaver(store, c.Snapshot, indexstore.SaverConfig{Logger: logger})
-	c.SetOnChange(saver.MarkDirty)
+	cache := caching.New(client, caching.Options{Logger: logger, Store: store})
+	saver := indexstore.NewSaver(store, cache.Snapshot, indexstore.SaverConfig{Logger: logger})
+	cache.SetOnChange(saver.MarkDirty)
 
-	svc := service.New(c, logger, service.WithWriter(client))
+	svc := service.New(cache, logger, service.WithWriter(client))
 	a := &app{
 		logger:    logger,
 		server:    mcpserver.New(svc, mcpserver.Options{Logger: logger, WritesEnabled: cfg.WritesEnabled, CallTimeout: mcpserver.DefaultCallTimeout}),
@@ -140,7 +140,7 @@ func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app,
 	}()
 	go func() {
 		defer close(a.cacheDone)
-		c.Run(ctx)
+		cache.Run(ctx)
 	}()
 
 	logger.Info("recipe index loading in the background", "index_store", string(cfg.Index.Mode))

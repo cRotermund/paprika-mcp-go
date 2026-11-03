@@ -1,4 +1,4 @@
-package cache_test
+package caching_test
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -98,7 +98,7 @@ func TestMemoryAndSpeedAtFiveThousandRecipes(t *testing.T) {
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	m := cache.New(src, cache.Options{Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	m := caching.New(src, caching.Options{Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
 	if err := m.Sync(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestMemoryAndSpeedAtFiveThousandRecipes(t *testing.T) {
 	_ = zw.Close()
 
 	start := time.Now()
-	hits, err := m.Search(ctx, cache.Query{Text: "chicken rice"})
+	hits, err := m.Search(ctx, caching.Query{Text: "chicken rice"})
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatal(err)

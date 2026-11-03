@@ -1,4 +1,4 @@
-package cache_test
+package caching_test
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/indexstore"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
@@ -61,8 +61,8 @@ func newEnv(t *testing.T) *env {
 	return &env{fake: fake, src: testsupport.Client(t, fake, nil), clock: newClock(), logs: &bytes.Buffer{}}
 }
 
-func (e *env) newCache(store indexstore.Store) *cache.Cache {
-	return cache.New(e.src, cache.Options{
+func (e *env) newCache(store indexstore.Store) *caching.Cache {
+	return caching.New(e.src, caching.Options{
 		Logger:   slog.New(slog.NewTextHandler(&lockedWriter{w: e.logs}, nil)),
 		Store:    store,
 		Now:      e.clock.Now,
@@ -181,7 +181,7 @@ func TestInvalidateAndRefresh(t *testing.T) {
 	if err := c.Refresh(ctx, "nonsense"); err == nil {
 		t.Error("Refresh accepted an unknown resource")
 	}
-	if err := c.Refresh(ctx, cache.ResourceCategories); err != nil {
+	if err := c.Refresh(ctx, caching.ResourceCategories); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.count("GET", categoriesPath); got != 2 {
@@ -275,7 +275,7 @@ func TestBodyCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	seedThree(e)
-	c := cache.New(e.src, cache.Options{Now: e.clock.Now, BodyCacheSize: 2,
+	c := caching.New(e.src, caching.Options{Now: e.clock.Now, BodyCacheSize: 2,
 		Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
 	if err := c.Sync(ctx); err != nil {
 		t.Fatal(err)
@@ -301,7 +301,7 @@ func newFileStore(t *testing.T) (indexstore.Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "index.json.gz")
 	store, err := indexstore.New(context.Background(), indexstore.Config{
-		Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: cache.SnapshotFormatVersion,
+		Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: caching.SnapshotFormatVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +309,7 @@ func newFileStore(t *testing.T) (indexstore.Store, string) {
 	return store, path
 }
 
-func saveSnapshot(t *testing.T, c *cache.Cache, store indexstore.Store) {
+func saveSnapshot(t *testing.T, c *caching.Cache, store indexstore.Store) {
 	t.Helper()
 	snap, err := c.Snapshot(context.Background())
 	if err != nil {
@@ -342,7 +342,7 @@ func TestSnapshotLoadCompareThenBackgroundFetch(t *testing.T) {
 	if p := second.Progress(); !p.Ready || p.Recipes != 3 {
 		t.Fatalf("after loading the snapshot progress = %+v, want ready with 3 recipes", p)
 	}
-	hits, err := second.Search(ctx, cache.Query{Text: "chicken"})
+	hits, err := second.Search(ctx, caching.Query{Text: "chicken"})
 	if err != nil || len(hits) != 2 {
 		t.Fatalf("search from snapshot = %d hits, %v; want 2", len(hits), err)
 	}
@@ -408,7 +408,7 @@ func TestSnapshotExpiryRereadsEverythingWhileServing(t *testing.T) {
 	if !second.Progress().Ready {
 		t.Fatal("an old snapshot must still serve searches")
 	}
-	if _, err := second.Search(ctx, cache.Query{Text: "apple"}); err != nil {
+	if _, err := second.Search(ctx, caching.Query{Text: "apple"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := second.Sync(ctx); err != nil {
@@ -465,7 +465,7 @@ func TestUnusableSnapshotIsIgnored(t *testing.T) {
 			}
 		}},
 		{"payload of another shape", func(t *testing.T, path string) {
-			other, err := indexstore.New(ctx, indexstore.Config{Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: cache.SnapshotFormatVersion})
+			other, err := indexstore.New(ctx, indexstore.Config{Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: caching.SnapshotFormatVersion})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -504,7 +504,7 @@ func TestPartialSnapshotResumesButDoesNotServe(t *testing.T) {
 	store, _ := newFileStore(t)
 
 	gate := newGatedSource(e.src, "R2")
-	first := cache.New(gate, cache.Options{Now: e.clock.Now, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	first := caching.New(gate, caching.Options{Now: e.clock.Now, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
 	errc := make(chan error, 1)
 	go func() { errc <- first.Sync(ctx) }()
 	gate.waitBlocked(t)
@@ -520,7 +520,7 @@ func TestPartialSnapshotResumesButDoesNotServe(t *testing.T) {
 	if second.Progress().Ready {
 		t.Error("a partial snapshot must not make search available")
 	}
-	if _, err := second.Search(ctx, cache.Query{}); err == nil {
+	if _, err := second.Search(ctx, caching.Query{}); err == nil {
 		t.Error("search succeeded on a partial snapshot")
 	}
 	if err := second.Sync(ctx); err != nil {
@@ -580,14 +580,14 @@ func TestStillLoadingUntilFirstPassFinishes(t *testing.T) {
 	e := newEnv(t)
 	seedThree(e)
 	gate := newGatedSource(e.src, "R2")
-	c := cache.New(gate, cache.Options{Now: e.clock.Now, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	c := caching.New(gate, caching.Options{Now: e.clock.Now, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
 
 	done := make(chan struct{})
 	go func() { _ = c.Sync(ctx); close(done) }()
 	gate.waitBlocked(t)
 
-	_, err := c.Search(ctx, cache.Query{Text: "soup"})
-	var loading *cache.LoadingError
+	_, err := c.Search(ctx, caching.Query{Text: "soup"})
+	var loading *caching.LoadingError
 	if !errors.As(err, &loading) {
 		t.Fatalf("search error = %v, want *LoadingError", err)
 	}
@@ -606,7 +606,7 @@ func TestStillLoadingUntilFirstPassFinishes(t *testing.T) {
 
 	gate.open()
 	<-done
-	if _, err := c.Search(ctx, cache.Query{Text: "soup"}); err != nil {
+	if _, err := c.Search(ctx, caching.Query{Text: "soup"}); err != nil {
 		t.Errorf("search after loading: %v", err)
 	}
 }
@@ -659,29 +659,29 @@ func TestSearch(t *testing.T) {
 
 	tests := []struct {
 		name string
-		q    cache.Query
+		q    caching.Query
 		want []string
 	}{
-		{"name outranks ingredient", cache.Query{Text: "tomato"}, []string{"A", "B", "C"}},
-		{"name match before category match", cache.Query{Text: "soup"}, []string{"F", "A"}},
-		{"category name matches", cache.Query{Text: "desserts"}, []string{"E"}},
-		{"source matches", cache.Query{Text: "grandma"}, []string{"E", "A"}},
-		{"prefix of a word", cache.Query{Text: "carr"}, []string{"B"}},
-		{"case insensitive", cache.Query{Text: "CHICKEN"}, []string{"B"}},
-		{"all words must match", cache.Query{Text: "tomato salad"}, []string{"C"}},
-		{"words in any field", cache.Query{Text: "soup cream"}, []string{"A"}},
-		{"no match", cache.Query{Text: "zucchini"}, nil},
-		{"directions are not searchable", cache.Query{Text: "boil"}, nil},
-		{"trashed hidden by default", cache.Query{Text: "old"}, nil},
-		{"trashed included on request", cache.Query{Text: "old", IncludeTrashed: true}, []string{"D"}},
-		{"empty query lists by name", cache.Query{}, []string{"E", "B", "C", "F", "A"}},
-		{"favorites only", cache.Query{Favorite: &yes}, []string{"E", "A"}},
-		{"non favorites only", cache.Query{Favorite: &no}, []string{"B", "C", "F"}},
-		{"minimum rating", cache.Query{MinRating: 4}, []string{"E", "A"}},
-		{"category filter", cache.Query{CategoryUID: "CAT-SOUP"}, []string{"A"}},
-		{"category filter with trashed", cache.Query{CategoryUID: "CAT-SOUP", IncludeTrashed: true}, []string{"D", "A"}},
-		{"filters combine with text", cache.Query{Text: "tomato", MinRating: 4, Favorite: &yes}, []string{"A"}},
-		{"punctuation is ignored", cache.Query{Text: "  tomato, soup! "}, []string{"A"}},
+		{"name outranks ingredient", caching.Query{Text: "tomato"}, []string{"A", "B", "C"}},
+		{"name match before category match", caching.Query{Text: "soup"}, []string{"F", "A"}},
+		{"category name matches", caching.Query{Text: "desserts"}, []string{"E"}},
+		{"source matches", caching.Query{Text: "grandma"}, []string{"E", "A"}},
+		{"prefix of a word", caching.Query{Text: "carr"}, []string{"B"}},
+		{"case insensitive", caching.Query{Text: "CHICKEN"}, []string{"B"}},
+		{"all words must match", caching.Query{Text: "tomato salad"}, []string{"C"}},
+		{"words in any field", caching.Query{Text: "soup cream"}, []string{"A"}},
+		{"no match", caching.Query{Text: "zucchini"}, nil},
+		{"directions are not searchable", caching.Query{Text: "boil"}, nil},
+		{"trashed hidden by default", caching.Query{Text: "old"}, nil},
+		{"trashed included on request", caching.Query{Text: "old", IncludeTrashed: true}, []string{"D"}},
+		{"empty query lists by name", caching.Query{}, []string{"E", "B", "C", "F", "A"}},
+		{"favorites only", caching.Query{Favorite: &yes}, []string{"E", "A"}},
+		{"non favorites only", caching.Query{Favorite: &no}, []string{"B", "C", "F"}},
+		{"minimum rating", caching.Query{MinRating: 4}, []string{"E", "A"}},
+		{"category filter", caching.Query{CategoryUID: "CAT-SOUP"}, []string{"A"}},
+		{"category filter with trashed", caching.Query{CategoryUID: "CAT-SOUP", IncludeTrashed: true}, []string{"D", "A"}},
+		{"filters combine with text", caching.Query{Text: "tomato", MinRating: 4, Favorite: &yes}, []string{"A"}},
+		{"punctuation is ignored", caching.Query{Text: "  tomato, soup! "}, []string{"A"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -753,7 +753,7 @@ func TestUpsertRecipeAfterWrite(t *testing.T) {
 	if n := e.recipeFetches(); n != 0 {
 		t.Errorf("a freshly written recipe cost %d fetches", n)
 	}
-	hits, _ := c.Search(ctx, cache.Query{Text: "renamed"})
+	hits, _ := c.Search(ctx, caching.Query{Text: "renamed"})
 	if len(hits) != 1 {
 		t.Errorf("renamed recipe not searchable: %d hits", len(hits))
 	}
@@ -776,13 +776,13 @@ func TestConcurrentUse(t *testing.T) {
 			for j := range 20 {
 				switch (i + j) % 6 {
 				case 0:
-					_, _ = c.Search(ctx, cache.Query{Text: "chicken"})
+					_, _ = c.Search(ctx, caching.Query{Text: "chicken"})
 				case 1:
 					_, _ = c.Recipe(ctx, "R1")
 				case 2:
 					_, _ = c.Categories(ctx)
 				case 3:
-					c.Invalidate(cache.ResourceCategories)
+					c.Invalidate(caching.ResourceCategories)
 				case 4:
 					e.clock.Advance(2 * time.Minute)
 					_ = c.Fresh(ctx)

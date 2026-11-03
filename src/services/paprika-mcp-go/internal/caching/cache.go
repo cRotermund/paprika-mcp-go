@@ -1,4 +1,4 @@
-package cache
+package caching
 
 import (
 	"context"
@@ -261,7 +261,7 @@ func (c *Cache) Invalidate(resource string) bool {
 // Refresh invalidates a resource and downloads it again now.
 func (c *Cache) Refresh(ctx context.Context, resource string) error {
 	if !c.Invalidate(resource) {
-		return fmt.Errorf("cache: unknown resource %q", resource)
+		return fmt.Errorf("caching: unknown resource %q", resource)
 	}
 	if resource == ResourceRecipes {
 		return c.Sync(ctx)

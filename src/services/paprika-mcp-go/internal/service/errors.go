@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -68,7 +68,7 @@ func (s *Service) mapError(op string, err error) error {
 		return err
 	}
 
-	var loading *cache.LoadingError
+	var loading *caching.LoadingError
 	switch {
 	case errors.As(err, &loading):
 		msg := "The recipe index is still loading after startup, so search is not available yet. Retry in a minute"

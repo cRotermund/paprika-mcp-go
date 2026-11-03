@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -35,7 +35,7 @@ const (
 // Service implements the read and write operations. It is safe for concurrent
 // use.
 type Service struct {
-	cache *cache.Cache
+	cache *caching.Cache
 	log   *slog.Logger
 
 	// w is nil on a read-only service.
@@ -53,12 +53,12 @@ func WithWriter(w Writer) Option {
 	return func(s *Service) { s.w = w }
 }
 
-// New returns a Service that reads through c.
-func New(c *cache.Cache, logger *slog.Logger, opts ...Option) *Service {
+// New returns a Service that reads through cache.
+func New(cache *caching.Cache, logger *slog.Logger, opts ...Option) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Service{cache: c, log: logger, wlock: make(chan struct{}, 1), now: time.Now}
+	s := &Service{cache: cache, log: logger, wlock: make(chan struct{}, 1), now: time.Now}
 	for _, o := range opts {
 		o(s)
 	}
@@ -140,7 +140,7 @@ func (s *Service) SearchRecipes(ctx context.Context, p SearchParams) (Page[Recip
 		return Page[RecipeSummary]{}, invalid("min_rating must be between 0 and 5.")
 	}
 
-	q := cache.Query{Text: p.Query, Favorite: p.Favorite, MinRating: p.MinRating, IncludeTrashed: p.IncludeTrashed}
+	q := caching.Query{Text: p.Query, Favorite: p.Favorite, MinRating: p.MinRating, IncludeTrashed: p.IncludeTrashed}
 	cats, err := s.categoryNames(ctx)
 	if p.Category != "" {
 		if err != nil {

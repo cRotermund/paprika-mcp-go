@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/service"
@@ -16,7 +16,7 @@ import (
 type Stack struct {
 	Fake    *fakepaprika.Server
 	Client  *paprikaclient.Client
-	Cache   *cache.Cache
+	Cache   *caching.Cache
 	Service *service.Service
 }
 
@@ -38,9 +38,9 @@ func NewStackWith(tb testing.TB, logger *slog.Logger, seed func(*fakepaprika.Ser
 		seed(fake)
 	}
 	client := ClientWith(tb, fake, logger, tweak)
-	c := cache.New(client, cache.Options{Logger: logger})
-	if err := c.Sync(context.Background()); err != nil {
+	cache := caching.New(client, caching.Options{Logger: logger})
+	if err := cache.Sync(context.Background()); err != nil {
 		tb.Fatal(err)
 	}
-	return &Stack{Fake: fake, Client: client, Cache: c, Service: service.New(c, logger, service.WithWriter(client))}
+	return &Stack{Fake: fake, Client: client, Cache: cache, Service: service.New(cache, logger, service.WithWriter(client))}
 }

@@ -1,4 +1,4 @@
-// Package cache keeps a disposable local cache of Paprika data so that search and
+// Package caching keeps a disposable local cache of Paprika data so that search and
 // reads do not need one API call per recipe.
 //
 // # What it holds
@@ -32,4 +32,4 @@
 // (one status call at a time), and each list's own mutex (one load of that list
 // at a time). Lock order is syncMu, then a list mutex or statusMu, then mu;
 // bodyCache has its own leaf mutex.
-package cache
+package caching

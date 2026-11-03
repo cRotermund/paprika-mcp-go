@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/cache"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/caching"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
@@ -136,7 +136,7 @@ func (s *Service) AddGroceryItems(ctx context.Context, list string, items []Groc
 	if err != nil {
 		return AddGroceryItemsResult{}, err
 	}
-	s.cache.Invalidate(cache.ResourceGroceries)
+	s.cache.Invalidate(caching.ResourceGroceries)
 	return AddGroceryItemsResult{ListUID: target.UID, ListName: target.Name, Items: results, Added: len(objects), Warning: warning}, nil
 }
 
@@ -322,7 +322,7 @@ func (s *Service) UpdateGroceryItem(ctx context.Context, uid string, c GroceryCh
 	if err != nil {
 		return GroceryItemWrite{}, err
 	}
-	s.cache.Invalidate(cache.ResourceGroceries)
+	s.cache.Invalidate(caching.ResourceGroceries)
 	return GroceryItemWrite{Item: groceryItemSummary(o, ""), Changed: changed, Warning: warning}, nil
 }
 
@@ -351,7 +351,7 @@ func (s *Service) DeleteGroceryItem(ctx context.Context, uid string) (DeleteResu
 	if err != nil {
 		return DeleteResult{}, err
 	}
-	s.cache.Invalidate(cache.ResourceGroceries)
+	s.cache.Invalidate(caching.ResourceGroceries)
 	return DeleteResult{Before: before, Warning: warning}, nil
 }
 
@@ -414,7 +414,7 @@ func (s *Service) CreateGroceryList(ctx context.Context, name string) (GroceryLi
 	if err != nil {
 		return GroceryListWrite{}, err
 	}
-	s.cache.Invalidate(cache.ResourceGroceryLists)
+	s.cache.Invalidate(caching.ResourceGroceryLists)
 	return GroceryListWrite{List: GroceryListSummary{UID: uid, Name: name}, Warning: warning}, nil
 }
 
@@ -470,6 +470,6 @@ func (s *Service) DeleteGroceryList(ctx context.Context, list string) (DeleteRes
 	if err != nil {
 		return DeleteResult{}, err
 	}
-	s.cache.Invalidate(cache.ResourceGroceryLists)
+	s.cache.Invalidate(caching.ResourceGroceryLists)
 	return DeleteResult{Before: before, Warning: warning}, nil
 }

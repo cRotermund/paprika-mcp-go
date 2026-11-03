@@ -45,7 +45,7 @@ paprika-mcp-go  (one replica)
     |
     tools          inputs, outputs, annotations
     service        business rules, validation, write sequence
-    cache          recipe index, body cache, small lists, search, change detection
+    caching        recipe index, body cache, small lists, search, change detection
     indexstore     optional index snapshot: none, filesystem, or S3
     paprikaclient  login, requests, gzip multipart, pacing
     |  HTTPS, Paprika token
@@ -59,7 +59,7 @@ All under `src/services/paprika-mcp-go/internal/`:
 | Package | Responsibility |
 | --- | --- |
 | `paprikaclient` | HTTP client. Knows routes, encoding, login, and errors. Holds no business rules. |
-| `cache` | Recipe index, body cache, small lists, and search. Refreshes from status counters. |
+| `caching` | Recipe index, body cache, small lists, and search. Refreshes from status counters. |
 | `indexstore` | Loads and saves the index snapshot. Knows nothing about Paprika. |
 | `service` | Reads from the cache. Runs the write sequence. Validates references. |
 | `mcpserver` | Registers tools and maps service results and errors to MCP. |
