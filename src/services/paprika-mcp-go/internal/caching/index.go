@@ -153,7 +153,15 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 		c.changed()
 	}
 	if len(todo) > 0 {
-		c.log.Info("reading recipes", "to_read", len(todo), "removed", len(removed), "full_read", full)
+		c.log.Info(
+			"reading recipes",
+			"to_read",
+			len(todo),
+			"removed",
+			len(removed),
+			"full_read",
+			full,
+		)
 	}
 
 	for _, ref := range todo {
@@ -185,7 +193,13 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 	indexed := len(c.index)
 	c.mu.Unlock()
 	if firstSync {
-		c.log.Info("recipe index loaded", "recipes", indexed, "duration", c.now().Sub(started).Round(time.Millisecond))
+		c.log.Info(
+			"recipe index loaded",
+			"recipes",
+			indexed,
+			"duration",
+			c.now().Sub(started).Round(time.Millisecond),
+		)
 	}
 	if firstComplete || full {
 		c.changed()

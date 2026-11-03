@@ -94,6 +94,15 @@ func (c *Cache) LoadSnapshot(ctx context.Context) {
 	expired := c.expiredLocked()
 	c.mu.Unlock()
 
-	c.log.Info("index snapshot loaded", "recipes", len(entries), "complete", p.Complete,
-		"saved_at", snap.SavedAt, "reread_all", expired)
+	c.log.Info(
+		"index snapshot loaded",
+		"recipes",
+		len(entries),
+		"complete",
+		p.Complete,
+		"saved_at",
+		snap.SavedAt,
+		"reread_all",
+		expired,
+	)
 }

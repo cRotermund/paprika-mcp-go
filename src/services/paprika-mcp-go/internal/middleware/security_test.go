@@ -30,13 +30,48 @@ func TestClientIP(t *testing.T) {
 		want       string
 	}{
 		{name: "remote addr only", remoteAddr: "192.0.2.10:5555", want: "192.0.2.10"},
-		{name: "rightmost forwarded hop", forwarded: "10.0.0.1, 203.0.113.7", remoteAddr: "10.0.0.2:1", want: "203.0.113.7"},
-		{name: "spoofed left hops are ignored", forwarded: "1.2.3.4, 5.6.7.8, 203.0.113.7", remoteAddr: "10.0.0.2:1", want: "203.0.113.7"},
-		{name: "garbage last hop falls back", forwarded: "203.0.113.7, not-an-ip", remoteAddr: "10.0.0.2:1", want: "10.0.0.2"},
-		{name: "trailing comma falls back", forwarded: "203.0.113.7,", remoteAddr: "10.0.0.2:1", want: "10.0.0.2"},
-		{name: "single forwarded value", forwarded: " 203.0.113.7 ", remoteAddr: "10.0.0.2:1", want: "203.0.113.7"},
-		{name: "ipv6 forwarded", forwarded: "2001:db8::1", remoteAddr: "10.0.0.2:1", want: "2001:db8::1"},
-		{name: "garbage forwarded falls back", forwarded: "not-an-ip", remoteAddr: "10.0.0.2:1", want: "10.0.0.2"},
+		{
+			name:       "rightmost forwarded hop",
+			forwarded:  "10.0.0.1, 203.0.113.7",
+			remoteAddr: "10.0.0.2:1",
+			want:       "203.0.113.7",
+		},
+		{
+			name:       "spoofed left hops are ignored",
+			forwarded:  "1.2.3.4, 5.6.7.8, 203.0.113.7",
+			remoteAddr: "10.0.0.2:1",
+			want:       "203.0.113.7",
+		},
+		{
+			name:       "garbage last hop falls back",
+			forwarded:  "203.0.113.7, not-an-ip",
+			remoteAddr: "10.0.0.2:1",
+			want:       "10.0.0.2",
+		},
+		{
+			name:       "trailing comma falls back",
+			forwarded:  "203.0.113.7,",
+			remoteAddr: "10.0.0.2:1",
+			want:       "10.0.0.2",
+		},
+		{
+			name:       "single forwarded value",
+			forwarded:  " 203.0.113.7 ",
+			remoteAddr: "10.0.0.2:1",
+			want:       "203.0.113.7",
+		},
+		{
+			name:       "ipv6 forwarded",
+			forwarded:  "2001:db8::1",
+			remoteAddr: "10.0.0.2:1",
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "garbage forwarded falls back",
+			forwarded:  "not-an-ip",
+			remoteAddr: "10.0.0.2:1",
+			want:       "10.0.0.2",
+		},
 		{name: "remote addr without port", remoteAddr: "10.0.0.2", want: "10.0.0.2"},
 	}
 
@@ -64,11 +99,31 @@ func TestOrigin(t *testing.T) {
 	}{
 		{name: "no origin", want: http.StatusOK},
 		{name: "unknown origin", origin: "https://evil.example", want: http.StatusForbidden},
-		{name: "unknown origin with allow list", origin: "https://evil.example", allowed: []string{"https://claude.ai"}, want: http.StatusForbidden},
-		{name: "allowed origin", origin: "https://claude.ai", allowed: []string{"https://claude.ai"}, want: http.StatusOK},
-		{name: "allowed origin differs in case", origin: "https://Claude.ai", allowed: []string{"https://claude.ai"}, want: http.StatusOK},
+		{
+			name:    "unknown origin with allow list",
+			origin:  "https://evil.example",
+			allowed: []string{"https://claude.ai"},
+			want:    http.StatusForbidden,
+		},
+		{
+			name:    "allowed origin",
+			origin:  "https://claude.ai",
+			allowed: []string{"https://claude.ai"},
+			want:    http.StatusOK,
+		},
+		{
+			name:    "allowed origin differs in case",
+			origin:  "https://Claude.ai",
+			allowed: []string{"https://claude.ai"},
+			want:    http.StatusOK,
+		},
 		{name: "null origin", origin: "null", want: http.StatusForbidden},
-		{name: "different port", origin: "http://localhost:9", allowed: []string{"http://localhost:3000"}, want: http.StatusForbidden},
+		{
+			name:    "different port",
+			origin:  "http://localhost:9",
+			allowed: []string{"http://localhost:3000"},
+			want:    http.StatusForbidden,
+		},
 	}
 
 	for _, tt := range tests {
@@ -98,7 +153,11 @@ func TestBodyLimit(t *testing.T) {
 		want int
 	}{
 		{name: "under limit", body: strings.Repeat("a", limit), want: http.StatusOK},
-		{name: "over limit by declared length", body: strings.Repeat("a", limit+1), want: http.StatusRequestEntityTooLarge},
+		{
+			name: "over limit by declared length",
+			body: strings.Repeat("a", limit+1),
+			want: http.StatusRequestEntityTooLarge,
+		},
 	}
 
 	for _, tt := range tests {
@@ -124,7 +183,11 @@ func TestBodyLimit(t *testing.T) {
 				http.Error(w, "too large", http.StatusRequestEntityTooLarge)
 			}
 		}))
-		r := httptest.NewRequest(http.MethodPost, "/mcp", io.NopCloser(strings.NewReader(strings.Repeat("a", limit+1))))
+		r := httptest.NewRequest(
+			http.MethodPost,
+			"/mcp",
+			io.NopCloser(strings.NewReader(strings.Repeat("a", limit+1))),
+		)
 		r.ContentLength = -1
 		w := httptest.NewRecorder()
 
@@ -138,7 +201,10 @@ func TestBodyLimit(t *testing.T) {
 
 func TestTimeout(t *testing.T) {
 	var deadlineSet bool
-	h := Timeout(time.Minute, time.Second)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := Timeout(
+		time.Minute,
+		time.Second,
+	)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		_, deadlineSet = r.Context().Deadline()
 	}))
 
@@ -148,7 +214,10 @@ func TestTimeout(t *testing.T) {
 		t.Error("request context has no deadline")
 	}
 
-	expired := Timeout(time.Millisecond, time.Second)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	expired := Timeout(
+		time.Millisecond,
+		time.Second,
+	)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			if r.Context().Err() != context.DeadlineExceeded {
@@ -165,7 +234,10 @@ func TestTimeoutFallbackWhenHandlerOverruns(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 
-	h := Timeout(20*time.Millisecond, 20*time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Timeout(
+		20*time.Millisecond,
+		20*time.Millisecond,
+	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		<-release // ignores its deadline
 		_, _ = w.Write([]byte("too late"))
 	}))
@@ -180,13 +252,19 @@ func TestTimeoutFallbackWhenHandlerOverruns(t *testing.T) {
 		t.Errorf("Content-Type = %q", got)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"jsonrpc":"2.0"`) || !strings.Contains(body, `"error"`) || strings.Contains(body, "too late") {
+	if !strings.Contains(
+		body,
+		`"jsonrpc":"2.0"`,
+	) || !strings.Contains(body, `"error"`) || strings.Contains(body, "too late") {
 		t.Errorf("body = %q, want only the JSON-RPC error", body)
 	}
 }
 
 func TestTimeoutPassesAnInTimeResponseThrough(t *testing.T) {
-	h := Timeout(time.Minute, time.Second)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Timeout(
+		time.Minute,
+		time.Second,
+	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("fine"))
@@ -241,12 +319,19 @@ func TestFailedAuthLimit(t *testing.T) {
 	}
 
 	logged := logs.String()
-	for _, want := range []string{"authentication failed", "client_ip=203.0.113.1", "invalid token"} {
+	for _, want := range []string{
+		"authentication failed",
+		"client_ip=203.0.113.1",
+		"invalid token",
+	} {
 		if !strings.Contains(logged, want) {
 			t.Errorf("log output missing %q: %s", want, logged)
 		}
 	}
-	if strings.Contains(logged, "super-secret-value") || strings.Contains(strings.ToLower(logged), "bearer") {
+	if strings.Contains(
+		logged,
+		"super-secret-value",
+	) || strings.Contains(strings.ToLower(logged), "bearer") {
 		t.Errorf("log output leaks the Authorization header: %s", logged)
 	}
 }

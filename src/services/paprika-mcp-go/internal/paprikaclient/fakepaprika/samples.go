@@ -51,30 +51,50 @@ func SampleRecipe(uid, name string) map[string]any {
 // SampleCategory returns a synthetic category.
 func SampleCategory(uid, name string) map[string]any {
 	return map[string]any{
-		"uid": uid, "name": name, "order_flag": 0, "parent_uid": nil, "cookbook_uid": nil,
+		"uid":          uid,
+		"name":         name,
+		"order_flag":   0,
+		"parent_uid":   nil,
+		"cookbook_uid": nil,
 	}
 }
 
 // SampleMealType returns a synthetic meal type.
 func SampleMealType(uid, name string, original int) map[string]any {
 	return map[string]any{
-		"uid": uid, "name": name, "order_flag": original, "original_type": original,
-		"color": "#112233", "export_time": 43200, "export_all_day": false,
+		"uid":            uid,
+		"name":           name,
+		"order_flag":     original,
+		"original_type":  original,
+		"color":          "#112233",
+		"export_time":    43200,
+		"export_all_day": false,
 	}
 }
 
 // SampleMeal returns a synthetic meal. Date has the form "YYYY-MM-DD HH:MM:SS".
 func SampleMeal(uid, name, date, typeUID string) map[string]any {
 	return map[string]any{
-		"uid": uid, "name": name, "date": date, "order_flag": 0, "type": 1,
-		"type_uid": typeUID, "recipe_uid": nil, "is_ingredient": false, "scale": nil,
+		"uid":           uid,
+		"name":          name,
+		"date":          date,
+		"order_flag":    0,
+		"type":          1,
+		"type_uid":      typeUID,
+		"recipe_uid":    nil,
+		"is_ingredient": false,
+		"scale":         nil,
 	}
 }
 
 // SampleGroceryList returns a synthetic grocery list.
 func SampleGroceryList(uid, name string, isDefault bool) map[string]any {
 	return map[string]any{
-		"uid": uid, "name": name, "order_flag": 0, "is_default": isDefault, "reminders_list": "",
+		"uid":            uid,
+		"name":           name,
+		"order_flag":     0,
+		"is_default":     isDefault,
+		"reminders_list": "",
 	}
 }
 
@@ -86,9 +106,19 @@ func SampleAisle(uid, name string) map[string]any {
 // SampleGrocery returns a synthetic grocery item.
 func SampleGrocery(uid, name, listUID, aisleUID string) map[string]any {
 	return map[string]any{
-		"uid": uid, "name": name, "order_flag": 0, "purchased": false, "recipe": nil,
-		"aisle": "Produce", "ingredient": name, "instruction": "", "quantity": "",
-		"separate": false, "aisle_uid": aisleUID, "list_uid": listUID, "recipe_uid": nil,
+		"uid":         uid,
+		"name":        name,
+		"order_flag":  0,
+		"purchased":   false,
+		"recipe":      nil,
+		"aisle":       "Produce",
+		"ingredient":  name,
+		"instruction": "",
+		"quantity":    "",
+		"separate":    false,
+		"aisle_uid":   aisleUID,
+		"list_uid":    listUID,
+		"recipe_uid":  nil,
 	}
 }
 
@@ -96,8 +126,15 @@ func SampleGrocery(uid, name, listUID, aisleUID string) map[string]any {
 // null type_uid, a null recipe_uid, and only the numeric type.
 func SampleLegacyMeal(uid, name, date string, typ int) map[string]any {
 	return map[string]any{
-		"uid": uid, "name": name, "date": date, "order_flag": 0, "type": typ,
-		"type_uid": nil, "recipe_uid": nil, "is_ingredient": false, "scale": nil,
+		"uid":           uid,
+		"name":          name,
+		"date":          date,
+		"order_flag":    0,
+		"type":          typ,
+		"type_uid":      nil,
+		"recipe_uid":    nil,
+		"is_ingredient": false,
+		"scale":         nil,
 	}
 }
 
@@ -106,7 +143,8 @@ func SampleLegacyMeal(uid, name, date string, typ int) map[string]any {
 // type_uid and only the numeric type (1 is Lunch, 2 is Dinner).
 func (s *Server) SeedNoMealTypes() {
 	s.seedLibrary()
-	s.Seed("meals",
+	s.Seed(
+		"meals",
 		SampleLegacyMeal("LEGACY-MEAL-1", "Leftovers", "2030-05-01 00:00:00", 1),
 		SampleLegacyMeal("LEGACY-MEAL-2", "Pizza", "2030-05-01 00:00:00", 2),
 	)
@@ -117,16 +155,30 @@ func (s *Server) SeedNoMealTypes() {
 // one item, and no meals.
 func (s *Server) SeedDefault() {
 	s.seedLibrary()
-	s.Seed("mealtypes",
-		SampleMealType("MEALTYPE0000000000000000000000000000000000000000000000000000001", "Breakfast", 0),
+	s.Seed(
+		"mealtypes",
+		SampleMealType(
+			"MEALTYPE0000000000000000000000000000000000000000000000000000001",
+			"Breakfast",
+			0,
+		),
 		SampleMealType(MealTypeLunchUID, "Lunch", 1),
-		SampleMealType("MEALTYPE0000000000000000000000000000000000000000000000000000003", "Dinner", 2),
-		SampleMealType("MEALTYPE0000000000000000000000000000000000000000000000000000004", "Snacks", 3),
+		SampleMealType(
+			"MEALTYPE0000000000000000000000000000000000000000000000000000003",
+			"Dinner",
+			2,
+		),
+		SampleMealType(
+			"MEALTYPE0000000000000000000000000000000000000000000000000000004",
+			"Snacks",
+			3,
+		),
 	)
 }
 
 func (s *Server) seedLibrary() {
-	s.Seed("categories",
+	s.Seed(
+		"categories",
 		SampleCategory(CategoryDinnerUID, "Dinner"),
 		SampleCategory(CategoryDessertUID, "Dessert"),
 	)
@@ -137,5 +189,13 @@ func (s *Server) seedLibrary() {
 	s.SeedRecipe(trashed)
 	s.Seed("groceryaisles", SampleAisle(AisleProduceUID, "Produce"))
 	s.Seed("grocerylists", SampleGroceryList(GroceryListUID, "Groceries", true))
-	s.Seed("groceries", SampleGrocery("ITEM0000-0000-4000-8000-000000000001", "carrots", GroceryListUID, AisleProduceUID))
+	s.Seed(
+		"groceries",
+		SampleGrocery(
+			"ITEM0000-0000-4000-8000-000000000001",
+			"carrots",
+			GroceryListUID,
+			AisleProduceUID,
+		),
+	)
 }

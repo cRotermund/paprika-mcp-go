@@ -27,8 +27,18 @@ const (
 
 // candidateResources are the route names to try even if sync/status omits them.
 var candidateResources = []string{
-	"bookmarks", "categories", "groceries", "groceryaisles", "groceryingredients",
-	"grocerylists", "meals", "mealtypes", "menuitems", "menus", "pantry", "photos",
+	"bookmarks",
+	"categories",
+	"groceries",
+	"groceryaisles",
+	"groceryingredients",
+	"grocerylists",
+	"meals",
+	"mealtypes",
+	"menuitems",
+	"menus",
+	"pantry",
+	"photos",
 	"recipes",
 }
 
@@ -87,7 +97,12 @@ func newProber(baseURL string, delay time.Duration, out io.Writer) *prober {
 
 func (p *prober) login(ctx context.Context, email, password string) error {
 	form := url.Values{"email": {email}, "password": {password}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+loginPath, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		p.baseURL+loginPath,
+		strings.NewReader(form.Encode()),
+	)
 	if err != nil {
 		return fmt.Errorf("build login request: %w", err)
 	}
@@ -108,10 +123,19 @@ func (p *prober) login(ctx context.Context, email, password string) error {
 		Error *apiError `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(&body); err != nil {
-		return fmt.Errorf("login returned HTTP %d with an unreadable body: %w", resp.StatusCode, err)
+		return fmt.Errorf(
+			"login returned HTTP %d with an unreadable body: %w",
+			resp.StatusCode,
+			err,
+		)
 	}
 	if body.Error != nil {
-		return fmt.Errorf("login returned HTTP %d: %s (code %d)", resp.StatusCode, body.Error.Message, body.Error.Code)
+		return fmt.Errorf(
+			"login returned HTTP %d: %s (code %d)",
+			resp.StatusCode,
+			body.Error.Message,
+			body.Error.Code,
+		)
 	}
 	if resp.StatusCode != http.StatusOK || body.Result.Token == "" {
 		return fmt.Errorf("login returned HTTP %d with no token", resp.StatusCode)
@@ -168,7 +192,10 @@ func (p *prober) send(req *http.Request) (*fetchResult, error) {
 	}
 	defer resp.Body.Close()
 
-	res := &fetchResult{status: resp.StatusCode, contentEncoding: resp.Header.Get("Content-Encoding")}
+	res := &fetchResult{
+		status:          resp.StatusCode,
+		contentEncoding: resp.Header.Get("Content-Encoding"),
+	}
 	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes))
 	decoder.UseNumber()
 	var envelope map[string]json.RawMessage
@@ -220,7 +247,12 @@ func newSummary() *summary {
 func (s *summary) field(path string) *fieldStats {
 	f, ok := s.fields[path]
 	if !ok {
-		f = &fieldStats{types: map[string]int{}, shapes: map[string]int{}, ints: map[string]int{}, minLen: -1}
+		f = &fieldStats{
+			types:  map[string]int{},
+			shapes: map[string]int{},
+			ints:   map[string]int{},
+			minLen: -1,
+		}
 		s.fields[path] = f
 	}
 	return f
@@ -346,7 +378,13 @@ func formatCounts(counts map[string]int) string {
 
 func (p *prober) writeHeader(path string, res *fetchResult) {
 	fmt.Fprintf(p.out, "\n## GET %s\n\n", path)
-	fmt.Fprintf(p.out, "HTTP %d, content-encoding=%q, envelope keys=%v\n", res.status, res.contentEncoding, res.envelopeKeys)
+	fmt.Fprintf(
+		p.out,
+		"HTTP %d, content-encoding=%q, envelope keys=%v\n",
+		res.status,
+		res.contentEncoding,
+		res.envelopeKeys,
+	)
 	if res.apiErr != nil {
 		fmt.Fprintf(p.out, "API error: %s (code %d)\n", res.apiErr.Message, res.apiErr.Code)
 	}
@@ -437,7 +475,12 @@ func (p *prober) probeRecipes(ctx context.Context, items []any, samples int) err
 			stats.addObject(object, "")
 		}
 	}
-	fmt.Fprintf(p.out, "\n## GET sync/recipe/{uid}/\n\nsampled %d, statuses=%s\n\n", samples, formatCounts(statuses))
+	fmt.Fprintf(
+		p.out,
+		"\n## GET sync/recipe/{uid}/\n\nsampled %d, statuses=%s\n\n",
+		samples,
+		formatCounts(statuses),
+	)
 	stats.write(p.out)
 	return nil
 }
@@ -447,7 +490,12 @@ func (p *prober) run(ctx context.Context, email, password string, samples int) e
 		return err
 	}
 	fmt.Fprintln(p.out, "# Paprika API probe report")
-	fmt.Fprintf(p.out, "\nGenerated %s. Login succeeded with User-Agent %q.\n", time.Now().UTC().Format(time.RFC3339), userAgent)
+	fmt.Fprintf(
+		p.out,
+		"\nGenerated %s. Login succeeded with User-Agent %q.\n",
+		time.Now().UTC().Format(time.RFC3339),
+		userAgent,
+	)
 
 	counterNames, err := p.probeStatus(ctx)
 	if err != nil {

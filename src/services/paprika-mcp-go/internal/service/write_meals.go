@@ -48,12 +48,19 @@ func (s *Service) AddMeals(ctx context.Context, inputs []MealInput) (AddMealsRes
 		}
 		days[i] = t.Format(dateLayout)
 		if strings.TrimSpace(in.MealType) == "" {
-			return AddMealsResult{}, invalid("Meal %d: meal_type is required. Call list_meal_types for the names.", i)
+			return AddMealsResult{}, invalid(
+				"Meal %d: meal_type is required. Call list_meal_types for the names.",
+				i,
+			)
 		}
 		if strings.TrimSpace(in.RecipeUID) == "" && strings.TrimSpace(in.Name) == "" {
 			return AddMealsResult{}, invalid("Meal %d: give a recipe_uid, a name, or both.", i)
 		}
-		for field, v := range map[string]string{"meal_type": in.MealType, "recipe_uid": in.RecipeUID, "name": in.Name} {
+		for field, v := range map[string]string{
+			"meal_type":  in.MealType,
+			"recipe_uid": in.RecipeUID,
+			"name":       in.Name,
+		} {
 			if err := checkText(field, v, maxNameLen); err != nil {
 				return AddMealsResult{}, invalid("Meal %d: %s", i, err.Error())
 			}
@@ -120,7 +127,8 @@ func (s *Service) AddMeals(ctx context.Context, inputs []MealInput) (AddMealsRes
 			mustSet(o, "recipe_uid", recipeUID)
 		}
 		if mt.UID == "" {
-			mustSet(o, "type_uid", nil) // the account has no meal types; meals carry only the number
+			// The account has no meal types; meals carry only the number.
+			mustSet(o, "type_uid", nil)
 		} else {
 			mustSet(o, "type_uid", mt.UID)
 		}
@@ -128,14 +136,23 @@ func (s *Service) AddMeals(ctx context.Context, inputs []MealInput) (AddMealsRes
 		mustSet(o, "scale", nil)
 
 		objects = append(objects, o)
-		changes = append(changes, change{uid: uid, fields: []string{"date", "type", "type_uid", "name", "recipe_uid"}})
+		changes = append(
+			changes,
+			change{uid: uid, fields: []string{"date", "type", "type_uid", "name", "recipe_uid"}},
+		)
 		results[i].Meal = s.mealSummary(o, mts)
 	}
 	if len(objects) == 0 {
 		return AddMealsResult{}, batchFailure(failures)
 	}
 
-	warning, err := s.commit(ctx, tool, resMeal, changes, func(c context.Context) error { return s.w.SaveMeals(c, objects) })
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resMeal,
+		changes,
+		func(c context.Context) error { return s.w.SaveMeals(c, objects) },
+	)
 	if err != nil {
 		return AddMealsResult{}, err
 	}
@@ -146,7 +163,11 @@ func (s *Service) AddMeals(ctx context.Context, inputs []MealInput) (AddMealsRes
 // recipeLookup checks the recipe_uid values of a batch against the current
 // recipe list and returns each existing one with its name. It makes no request
 // when no meal links a recipe.
-func (s *Service) recipeLookup(ctx context.Context, tool string, inputs []MealInput) (map[string]string, error) {
+func (s *Service) recipeLookup(
+	ctx context.Context,
+	tool string,
+	inputs []MealInput,
+) (map[string]string, error) {
 	need := map[string]bool{} // uid -> a meal that links it has no name
 	for _, in := range inputs {
 		if uid := strings.TrimSpace(in.RecipeUID); uid != "" {
@@ -301,7 +322,10 @@ func (s *Service) UpdateMeal(ctx context.Context, uid string, c MealChanges) (Me
 		if r := strings.TrimSpace(*c.RecipeUID); r != "" {
 			if _, err := s.w.GetRecipe(ctx, r); err != nil {
 				if isNotFound(err) {
-					return MealWrite{}, notFound("Unknown recipe_uid %q. Use search_recipes to find a valid uid.", r)
+					return MealWrite{}, notFound(
+						"Unknown recipe_uid %q. Use search_recipes to find a valid uid.",
+						r,
+					)
 				}
 				return MealWrite{}, s.mapError(tool, err)
 			}
@@ -316,9 +340,15 @@ func (s *Service) UpdateMeal(ctx context.Context, uid string, c MealChanges) (Me
 		return MealWrite{Meal: s.mealSummary(o, mts), NoChange: true}, nil
 	}
 	mustSet(o, "deleted", false)
-	warning, err := s.commit(ctx, tool, resMeal, []change{{uid: uid, fields: changed}}, func(c context.Context) error {
-		return s.w.SaveMeals(c, []paprikaclient.Object{o})
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resMeal,
+		[]change{{uid: uid, fields: changed}},
+		func(c context.Context) error {
+			return s.w.SaveMeals(c, []paprikaclient.Object{o})
+		},
+	)
 	if err != nil {
 		return MealWrite{}, err
 	}
@@ -352,9 +382,15 @@ func (s *Service) DeleteMeal(ctx context.Context, uid string) (DeleteResult, err
 	}
 	before := ObjectMap(o)
 	mustSet(o, "deleted", true)
-	warning, err := s.commit(ctx, tool, resMeal, []change{{uid: uid, fields: []string{"deleted"}}}, func(c context.Context) error {
-		return s.w.SaveMeals(c, []paprikaclient.Object{o})
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resMeal,
+		[]change{{uid: uid, fields: []string{"deleted"}}},
+		func(c context.Context) error {
+			return s.w.SaveMeals(c, []paprikaclient.Object{o})
+		},
+	)
 	if err != nil {
 		return DeleteResult{}, err
 	}
@@ -364,7 +400,10 @@ func (s *Service) DeleteMeal(ctx context.Context, uid string) (DeleteResult, err
 
 // readMeal reads the current meals from the API and returns a copy of one raw
 // meal, with the account's meal types.
-func (s *Service) readMeal(ctx context.Context, tool, uid string) (paprikaclient.Object, mealTypes, error) {
+func (s *Service) readMeal(
+	ctx context.Context,
+	tool, uid string,
+) (paprikaclient.Object, mealTypes, error) {
 	meals, err := s.w.Meals(ctx)
 	if err != nil {
 		return nil, mealTypes{}, s.mapError(tool, err)
@@ -377,7 +416,10 @@ func (s *Service) readMeal(ctx context.Context, tool, uid string) (paprikaclient
 		}
 	}
 	if found == nil {
-		return nil, mealTypes{}, notFound("No meal has the uid %q. Use list_meals to find a valid uid.", uid)
+		return nil, mealTypes{}, notFound(
+			"No meal has the uid %q. Use list_meals to find a valid uid.",
+			uid,
+		)
 	}
 	types, err := s.w.MealTypes(ctx)
 	if err != nil {

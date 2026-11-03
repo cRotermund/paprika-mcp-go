@@ -58,9 +58,13 @@ func FailedAuthLimit(logger *slog.Logger, limiter *FailureLimiter) func(http.Han
 
 			if rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden {
 				limiter.RecordFailure(ip)
-				logger.Warn("authentication failed",
-					"client_ip", ip,
-					"reason", strings.TrimSpace(rec.reason.String()))
+				logger.Warn(
+					"authentication failed",
+					"client_ip",
+					ip,
+					"reason",
+					strings.TrimSpace(rec.reason.String()),
+				)
 			}
 		})
 	}

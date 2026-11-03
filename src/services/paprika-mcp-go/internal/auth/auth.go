@@ -92,7 +92,11 @@ func NewVerifier(hexHashes []string) (*Verifier, error) {
 
 // Verify implements the SDK's auth.TokenVerifier. Every stored hash is
 // compared, in constant time, whether or not an earlier one matched.
-func (v *Verifier) Verify(_ context.Context, token string, _ *http.Request) (*sdkauth.TokenInfo, error) {
+func (v *Verifier) Verify(
+	_ context.Context,
+	token string,
+	_ *http.Request,
+) (*sdkauth.TokenInfo, error) {
 	presented := sha256.Sum256([]byte(token))
 
 	match := 0

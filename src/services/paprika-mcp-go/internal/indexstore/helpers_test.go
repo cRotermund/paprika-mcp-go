@@ -145,7 +145,12 @@ func (f *fakeS3) object(bucket, key string) ([]byte, bool) {
 func s3Error(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><Error><Code>%s</Code><Message>%s</Message></Error>`, code, code)
+	_, _ = fmt.Fprintf(
+		w,
+		`<?xml version="1.0" encoding="UTF-8"?><Error><Code>%s</Code><Message>%s</Message></Error>`,
+		code,
+		code,
+	)
 }
 
 // readBody returns the request body, decoding aws-chunked framing if the SDK

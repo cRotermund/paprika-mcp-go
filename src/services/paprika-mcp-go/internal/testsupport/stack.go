@@ -28,7 +28,12 @@ func NewStack(tb testing.TB, logger *slog.Logger, seed func(*fakepaprika.Server)
 }
 
 // NewStackWith is [NewStack] with a chance to change the client configuration.
-func NewStackWith(tb testing.TB, logger *slog.Logger, seed func(*fakepaprika.Server), tweak func(*paprikaclient.Config)) *Stack {
+func NewStackWith(
+	tb testing.TB,
+	logger *slog.Logger,
+	seed func(*fakepaprika.Server),
+	tweak func(*paprikaclient.Config),
+) *Stack {
 	tb.Helper()
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -42,5 +47,10 @@ func NewStackWith(tb testing.TB, logger *slog.Logger, seed func(*fakepaprika.Ser
 	if err := cache.Sync(context.Background()); err != nil {
 		tb.Fatal(err)
 	}
-	return &Stack{Fake: fake, Client: client, Cache: cache, Service: service.New(cache, logger, service.WithWriter(client))}
+	return &Stack{
+		Fake:    fake,
+		Client:  client,
+		Cache:   cache,
+		Service: service.New(cache, logger, service.WithWriter(client)),
+	}
 }

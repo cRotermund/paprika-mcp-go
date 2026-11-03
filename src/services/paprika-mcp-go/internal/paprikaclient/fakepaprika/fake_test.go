@@ -21,7 +21,10 @@ type rawClient struct {
 func newRawClient(t *testing.T, s *Server) *rawClient {
 	t.Helper()
 	c := &rawClient{t: t, s: s}
-	resp, err := http.PostForm(s.URL()+loginPath, url.Values{"email": {s.Email()}, "password": {s.Password()}})
+	resp, err := http.PostForm(
+		s.URL()+loginPath,
+		url.Values{"email": {s.Email()}, "password": {s.Password()}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +39,11 @@ func newRawClient(t *testing.T, s *Server) *rawClient {
 	return c
 }
 
-func (c *rawClient) do(method, path string, body io.Reader, contentType string) (int, json.RawMessage) {
+func (c *rawClient) do(
+	method, path string,
+	body io.Reader,
+	contentType string,
+) (int, json.RawMessage) {
 	c.t.Helper()
 	req, err := http.NewRequest(method, c.s.URL()+path, body)
 	if err != nil {
@@ -82,7 +89,11 @@ func TestWriteBehavior(t *testing.T) {
 
 	t.Run("bulk counters rise per object and merge keeps omitted fields", func(t *testing.T) {
 		status, _ := c.post("/api/v2/sync/groceries/", []map[string]any{
-			{"uid": "ITEM0000-0000-4000-8000-000000000001", "purchased": true, "list_uid": "UNKNOWN-LIST"},
+			{
+				"uid":       "ITEM0000-0000-4000-8000-000000000001",
+				"purchased": true,
+				"list_uid":  "UNKNOWN-LIST",
+			},
 			{"uid": "NEW-ITEM", "name": "flour", "list_uid": "UNKNOWN-LIST"},
 		})
 		if status != 200 {
@@ -113,7 +124,11 @@ func TestWriteBehavior(t *testing.T) {
 	})
 
 	t.Run("stale recipe write is accepted and trashed recipes are listed", func(t *testing.T) {
-		stale := map[string]any{"uid": RecipeSoupUID, "hash": strings.Repeat("0", 64), "name": "Stale"}
+		stale := map[string]any{
+			"uid":  RecipeSoupUID,
+			"hash": strings.Repeat("0", 64),
+			"name": "Stale",
+		}
 		if status, _ := c.post("/api/v2/sync/recipe/"+RecipeSoupUID+"/", stale); status != 200 {
 			t.Fatalf("status = %d", status)
 		}

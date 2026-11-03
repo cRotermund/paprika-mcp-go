@@ -46,14 +46,22 @@ func newMealTypes(entries []paprikaclient.Entry[paprikaclient.MealType]) mealTyp
 	for i, e := range entries {
 		vals[i] = e.Value
 	}
-	slices.SortStableFunc(vals, func(a, b paprikaclient.MealType) int { return a.OrderFlag - b.OrderFlag })
+	slices.SortStableFunc(
+		vals,
+		func(a, b paprikaclient.MealType) int { return a.OrderFlag - b.OrderFlag },
+	)
 	return mealTypes{list: vals}
 }
 
 func (mt mealTypes) infos() []MealTypeInfo {
 	out := make([]MealTypeInfo, len(mt.list))
 	for i, t := range mt.list {
-		out[i] = MealTypeInfo{UID: t.UID, Name: t.Name, OriginalType: t.OriginalType, Builtin: mt.builtin}
+		out[i] = MealTypeInfo{
+			UID:          t.UID,
+			Name:         t.Name,
+			OriginalType: t.OriginalType,
+			Builtin:      mt.builtin,
+		}
 	}
 	return out
 }
@@ -75,7 +83,11 @@ func (mt mealTypes) byName(name string) (paprikaclient.MealType, error) {
 			return t, nil
 		}
 	}
-	return paprikaclient.MealType{}, notFound("Unknown meal type %q. Valid meal types are: %s. Call list_meal_types to see them.", name, mt.names())
+	return paprikaclient.MealType{}, notFound(
+		"Unknown meal type %q. Valid meal types are: %s. Call list_meal_types to see them.",
+		name,
+		mt.names(),
+	)
 }
 
 // forMeal names a meal's type: by type_uid when it resolves, else by matching

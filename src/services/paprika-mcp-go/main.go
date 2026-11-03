@@ -126,8 +126,15 @@ func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app,
 
 	svc := service.New(cache, logger, service.WithWriter(client))
 	a := &app{
-		logger:    logger,
-		server:    mcpserver.New(svc, mcpserver.Options{Logger: logger, WritesEnabled: cfg.WritesEnabled, CallTimeout: mcpserver.DefaultCallTimeout}),
+		logger: logger,
+		server: mcpserver.New(
+			svc,
+			mcpserver.Options{
+				Logger:        logger,
+				WritesEnabled: cfg.WritesEnabled,
+				CallTimeout:   mcpserver.DefaultCallTimeout,
+			},
+		),
 		cacheDone: make(chan struct{}),
 		saverDone: make(chan struct{}),
 	}

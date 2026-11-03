@@ -29,7 +29,13 @@ const (
 // backupResources are saved before any write. Recipes are not included, because
 // reading them all is slow and the account owner backs them up separately.
 var backupResources = []string{
-	"categories", "groceries", "groceryaisles", "groceryingredients", "grocerylists", "meals", "mealtypes",
+	"categories",
+	"groceries",
+	"groceryaisles",
+	"groceryingredients",
+	"grocerylists",
+	"meals",
+	"mealtypes",
 }
 
 var (
@@ -206,12 +212,21 @@ func describeOutcome(res *fetchResult) string {
 		return "accepted"
 	}
 	if res.apiErr != nil {
-		return fmt.Sprintf("rejected, HTTP %d, %q, code %d", res.status, res.apiErr.Message, res.apiErr.Code)
+		return fmt.Sprintf(
+			"rejected, HTTP %d, %q, code %d",
+			res.status,
+			res.apiErr.Message,
+			res.apiErr.Code,
+		)
 	}
 	return fmt.Sprintf("not accepted, HTTP %d, result %v", res.status, res.result)
 }
 
-func (c *checker) postList(ctx context.Context, resource string, objects ...object) (*fetchResult, error) {
+func (c *checker) postList(
+	ctx context.Context,
+	resource string,
+	objects ...object,
+) (*fetchResult, error) {
 	if err := c.assertOwned(resource, objects); err != nil {
 		return nil, err
 	}
@@ -336,13 +351,23 @@ func (c *checker) reportReadOnly(ctx context.Context) error {
 		return err
 	}
 	for _, mealType := range types {
-		c.report("Meal type", "original_type=%v name=%v", mealType["original_type"], mealType["name"])
+		c.report(
+			"Meal type",
+			"original_type=%v name=%v",
+			mealType["original_type"],
+			mealType["name"],
+		)
 	}
 
 	if err := c.p.pause(ctx); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.p.baseURL+syncPrefix+"status/", nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		c.p.baseURL+syncPrefix+"status/",
+		nil,
+	)
 	if err != nil {
 		return err
 	}
@@ -362,9 +387,19 @@ func (c *checker) reportReadOnly(ctx context.Context) error {
 
 func (c *checker) groceryItem(uid, name, listUID, aisleUID string) object {
 	return object{
-		"uid": uid, "deleted": false, "name": name, "order_flag": 0, "purchased": false, "recipe": nil,
-		"aisle": testPrefix, "ingredient": name, "instruction": "", "quantity": "", "separate": false,
-		"aisle_uid": aisleUID, "list_uid": listUID,
+		"uid":         uid,
+		"deleted":     false,
+		"name":        name,
+		"order_flag":  0,
+		"purchased":   false,
+		"recipe":      nil,
+		"aisle":       testPrefix,
+		"ingredient":  name,
+		"instruction": "",
+		"quantity":    "",
+		"separate":    false,
+		"aisle_uid":   aisleUID,
+		"list_uid":    listUID,
 	}
 }
 
@@ -403,7 +438,14 @@ func (c *checker) checkGroceries(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	testList := object{"uid": listUID, "deleted": false, "name": testPrefix + " list", "order_flag": 999, "is_default": false, "reminders_list": ""}
+	testList := object{
+		"uid":            listUID,
+		"deleted":        false,
+		"name":           testPrefix + " list",
+		"order_flag":     999,
+		"is_default":     false,
+		"reminders_list": "",
+	}
 	res, err := c.postList(ctx, "grocerylists", testList)
 	if err != nil {
 		return err
@@ -412,7 +454,12 @@ func (c *checker) checkGroceries(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.report("W1 (multipart, User-Agent)", "standard Go multipart: %s; list visible on re-read: %t", describeOutcome(res), listed != nil)
+	c.report(
+		"W1 (multipart, User-Agent)",
+		"standard Go multipart: %s; list visible on re-read: %t",
+		describeOutcome(res),
+		listed != nil,
+	)
 	if !accepted(res) || listed == nil {
 		return fmt.Errorf("%w: baseline write failed", errUnexpected)
 	}
@@ -438,7 +485,13 @@ func (c *checker) checkGroceries(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.report("W2 (omitted fields)", "upload %s; after omitting them, quantity=%s instruction=%s", describeOutcome(res), describeField(item, "quantity"), describeField(item, "instruction"))
+	c.report(
+		"W2 (omitted fields)",
+		"upload %s; after omitting them, quantity=%s instruction=%s",
+		describeOutcome(res),
+		describeField(item, "quantity"),
+		describeField(item, "instruction"),
+	)
 
 	var bulk []object
 	for i := range 3 {
@@ -463,7 +516,13 @@ func (c *checker) checkGroceries(ctx context.Context) error {
 			}
 		}
 	}
-	c.report("W9 (bulk POST)", "upload %s; %d of %d objects listed", describeOutcome(res), found, len(bulk))
+	c.report(
+		"W9 (bulk POST)",
+		"upload %s; %d of %d objects listed",
+		describeOutcome(res),
+		found,
+		len(bulk),
+	)
 	c.report("New-object UUIDs", "%d objects created with uppercase UUIDs were listed", found)
 
 	cases := []struct {
@@ -485,7 +544,13 @@ func (c *checker) checkGroceries(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		c.report(tc.id, "upload %s; listed=%t, stored value unchanged=%t", describeOutcome(res), stored != nil, stored != nil && stored[tc.field] == entry[tc.field])
+		c.report(
+			tc.id,
+			"upload %s; listed=%t, stored value unchanged=%t",
+			describeOutcome(res),
+			stored != nil,
+			stored != nil && stored[tc.field] == entry[tc.field],
+		)
 	}
 
 	restore, err := c.ownedItem(testPrefix+" W6 restore", listUID, aisleUID)
@@ -502,7 +567,12 @@ func (c *checker) checkRestore(ctx context.Context, resource, id string, obj obj
 		return err
 	}
 	if !accepted(res) {
-		return fmt.Errorf("%w: baseline %s write: %s", errUnexpected, resource, describeOutcome(res))
+		return fmt.Errorf(
+			"%w: baseline %s write: %s",
+			errUnexpected,
+			resource,
+			describeOutcome(res),
+		)
 	}
 	created, err := c.findInList(ctx, resource, uid)
 	if err != nil {
@@ -524,7 +594,14 @@ func (c *checker) checkRestore(ctx context.Context, resource, id string, obj obj
 	if err != nil {
 		return err
 	}
-	c.report(id, "listed after create=%t, after delete=%t, after re-post with deleted:false=%t; re-post %s", created != nil, afterDelete != nil, afterRestore != nil, describeOutcome(res))
+	c.report(
+		id,
+		"listed after create=%t, after delete=%t, after re-post with deleted:false=%t; re-post %s",
+		created != nil,
+		afterDelete != nil,
+		afterRestore != nil,
+		describeOutcome(res),
+	)
 	return nil
 }
 
@@ -543,8 +620,14 @@ func (c *checker) checkMeals(ctx context.Context) error {
 		return err
 	}
 	meal := object{
-		"uid": uid, "deleted": false, "order_flag": 0, "name": testPrefix + " meal", "date": farFutureDate,
-		"type": mealType["original_type"], "recipe_uid": nil, "type_uid": typeUID,
+		"uid":        uid,
+		"deleted":    false,
+		"order_flag": 0,
+		"name":       testPrefix + " meal",
+		"date":       farFutureDate,
+		"type":       mealType["original_type"],
+		"recipe_uid": nil,
+		"type_uid":   typeUID,
 	}
 	return c.checkRestore(ctx, "meals", "W6 (meal)", meal)
 }
@@ -556,11 +639,33 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 		return err
 	}
 	base := object{
-		"uid": uid, "deleted": false, "created": time.Now().UTC().Format("2006-01-02 15:04:05"), "hash": newHash(),
-		"name": testPrefix + " recipe", "description": "", "ingredients": "", "directions": "", "notes": "",
-		"nutritional_info": "", "prep_time": "", "cook_time": "", "total_time": "", "difficulty": "", "servings": "",
-		"rating": 0, "scale": nil, "source": "", "source_url": "", "on_favorites": false, "is_pinned": false,
-		"in_trash": true, "photo": nil, "photo_large": nil, "photo_hash": nil, "image_url": nil, "categories": []string{},
+		"uid":              uid,
+		"deleted":          false,
+		"created":          time.Now().UTC().Format("2006-01-02 15:04:05"),
+		"hash":             newHash(),
+		"name":             testPrefix + " recipe",
+		"description":      "",
+		"ingredients":      "",
+		"directions":       "",
+		"notes":            "",
+		"nutritional_info": "",
+		"prep_time":        "",
+		"cook_time":        "",
+		"total_time":       "",
+		"difficulty":       "",
+		"servings":         "",
+		"rating":           0,
+		"scale":            nil,
+		"source":           "",
+		"source_url":       "",
+		"on_favorites":     false,
+		"is_pinned":        false,
+		"in_trash":         true,
+		"photo":            nil,
+		"photo_large":      nil,
+		"photo_hash":       nil,
+		"image_url":        nil,
+		"categories":       []string{},
 	}
 	res, err := c.postRecipe(ctx, base)
 	if err != nil {
@@ -570,7 +675,13 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.report("Recipe create", "upload %s; readable=%t, in_trash=%s", describeOutcome(res), stored != nil, describeField(stored, "in_trash"))
+	c.report(
+		"Recipe create",
+		"upload %s; readable=%t, in_trash=%s",
+		describeOutcome(res),
+		stored != nil,
+		describeField(stored, "in_trash"),
+	)
 	if !accepted(res) || stored == nil {
 		return fmt.Errorf("%w: baseline recipe write failed", errUnexpected)
 	}
@@ -583,7 +694,14 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if stored, err = c.readRecipe(ctx, uid); err != nil {
 		return err
 	}
-	c.report("W3 (send newer fields)", "upload %s; servings_min=%s servings_max=%s prep_minutes=%s", describeOutcome(res), describeField(stored, "servings_min"), describeField(stored, "servings_max"), describeField(stored, "prep_minutes"))
+	c.report(
+		"W3 (send newer fields)",
+		"upload %s; servings_min=%s servings_max=%s prep_minutes=%s",
+		describeOutcome(res),
+		describeField(stored, "servings_min"),
+		describeField(stored, "servings_max"),
+		describeField(stored, "prep_minutes"),
+	)
 
 	omitted := maps.Clone(base)
 	omitted["hash"] = newHash()
@@ -593,7 +711,14 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if stored, err = c.readRecipe(ctx, uid); err != nil {
 		return err
 	}
-	c.report("W3 (omit newer fields)", "upload %s; servings_min=%s servings_max=%s prep_minutes=%s", describeOutcome(res), describeField(stored, "servings_min"), describeField(stored, "servings_max"), describeField(stored, "prep_minutes"))
+	c.report(
+		"W3 (omit newer fields)",
+		"upload %s; servings_min=%s servings_max=%s prep_minutes=%s",
+		describeOutcome(res),
+		describeField(stored, "servings_min"),
+		describeField(stored, "servings_max"),
+		describeField(stored, "prep_minutes"),
+	)
 
 	const lineBreaks = "LF one\nLF two\r\nCRLF three"
 	breaks := maps.Clone(stored)
@@ -604,7 +729,12 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if stored, err = c.readRecipe(ctx, uid); err != nil {
 		return err
 	}
-	c.report("W7 (line breaks)", "upload %s; stored unchanged=%t; check display in the app", describeOutcome(res), stored != nil && stored["directions"] == lineBreaks)
+	c.report(
+		"W7 (line breaks)",
+		"upload %s; stored unchanged=%t; check display in the app",
+		describeOutcome(res),
+		stored != nil && stored["directions"] == lineBreaks,
+	)
 
 	lowerHash := strings.ToLower(newHash())
 	lower := maps.Clone(stored)
@@ -615,7 +745,12 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if stored, err = c.readRecipe(ctx, uid); err != nil {
 		return err
 	}
-	c.report("Hash case", "lowercase upload %s; stored as sent=%t", describeOutcome(res), stored != nil && stored["hash"] == lowerHash)
+	c.report(
+		"Hash case",
+		"lowercase upload %s; stored as sent=%t",
+		describeOutcome(res),
+		stored != nil && stored["hash"] == lowerHash,
+	)
 
 	staleBase := maps.Clone(stored)
 	second := maps.Clone(stored)
@@ -632,7 +767,13 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if stored, err = c.readRecipe(ctx, uid); err != nil {
 		return err
 	}
-	c.report("W4 (stale write)", "upload carrying the old hash %s; description=%s, old hash stored=%t", describeOutcome(res), describeField(stored, "description"), stored != nil && stored["hash"] == staleBase["hash"])
+	c.report(
+		"W4 (stale write)",
+		"upload carrying the old hash %s; description=%s, old hash stored=%t",
+		describeOutcome(res),
+		describeField(stored, "description"),
+		stored != nil && stored["hash"] == staleBase["hash"],
+	)
 
 	sameHash := maps.Clone(stored)
 	sameHash["description"] = "edit with the same hash"
@@ -643,7 +784,13 @@ func (c *checker) checkRecipe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.report("Write without a new hash", "upload %s; description=%s, hash unchanged=%t; check whether the app shows it", describeOutcome(res), describeField(after, "description"), after != nil && after["hash"] == stored["hash"])
+	c.report(
+		"Write without a new hash",
+		"upload %s; description=%s, hash unchanged=%t; check whether the app shows it",
+		describeOutcome(res),
+		describeField(after, "description"),
+		after != nil && after["hash"] == stored["hash"],
+	)
 	return nil
 }
 
@@ -663,7 +810,10 @@ func (c *checker) reportRememberedIngredients(ctx context.Context) error {
 	}
 	test := 0
 	for _, obj := range objects {
-		if name, ok := obj["name"].(string); ok && strings.Contains(strings.ToUpper(name), testPrefix) {
+		if name, ok := obj["name"].(string); ok && strings.Contains(
+			strings.ToUpper(name),
+			testPrefix,
+		) {
 			test++
 		}
 	}
@@ -672,7 +822,12 @@ func (c *checker) reportRememberedIngredients(ctx context.Context) error {
 }
 
 // login and the guards run before anything else, so a refused run sends no writes.
-func prepareWrites(ctx context.Context, p *prober, password string, opts writeOptions) (*checker, error) {
+func prepareWrites(
+	ctx context.Context,
+	p *prober,
+	password string,
+	opts writeOptions,
+) (*checker, error) {
 	if err := checkConfirmation(opts); err != nil {
 		return nil, err
 	}
@@ -685,7 +840,12 @@ func prepareWrites(ctx context.Context, p *prober, password string, opts writeOp
 		return nil, err
 	}
 	if len(recipes) > maxUnconfirmedLib && !opts.allowRealAcct {
-		return nil, fmt.Errorf("%w: account has %d recipes, more than %d, so -allow-real-account is required", errGuard, len(recipes), maxUnconfirmedLib)
+		return nil, fmt.Errorf(
+			"%w: account has %d recipes, more than %d, so -allow-real-account is required",
+			errGuard,
+			len(recipes),
+			maxUnconfirmedLib,
+		)
 	}
 	return c, nil
 }
@@ -705,7 +865,12 @@ func runWriteChecks(ctx context.Context, p *prober, password string, opts writeO
 		return fmt.Errorf("%w: %s exists, so run -cleanup first", errGuard, opts.statePath)
 	}
 
-	fmt.Fprintf(c.out, "# Paprika write checks\n\nGenerated %s. User-Agent %q.\n\n## Backup\n\n", time.Now().UTC().Format(time.RFC3339), userAgent)
+	fmt.Fprintf(
+		c.out,
+		"# Paprika write checks\n\nGenerated %s. User-Agent %q.\n\n## Backup\n\n",
+		time.Now().UTC().Format(time.RFC3339),
+		userAgent,
+	)
 	if err := c.saveBackup(ctx, opts.backupPath); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
@@ -718,7 +883,11 @@ func runWriteChecks(ctx context.Context, p *prober, password string, opts writeO
 	if err := c.reportRememberedIngredients(ctx); err != nil {
 		return err
 	}
-	for _, check := range []func(context.Context) error{c.checkGroceries, c.checkMeals, c.checkRecipe} {
+	for _, check := range []func(context.Context) error{
+		c.checkGroceries,
+		c.checkMeals,
+		c.checkRecipe,
+	} {
 		if err := check(ctx); err != nil {
 			fmt.Fprintf(c.out, "\n**Stopped:** %v\n", err)
 			return err
@@ -782,14 +951,27 @@ func runInspect(ctx context.Context, p *prober, email, password, statePath strin
 	}
 
 	fmt.Fprintln(c.out, "# Paprika write check inspection")
-	c.report("Counts", "%d aisles, %d lists, %d grocery items, %d meals", len(aisles), len(lists), len(groceries), len(meals))
+	c.report(
+		"Counts",
+		"%d aisles, %d lists, %d grocery items, %d meals",
+		len(aisles),
+		len(lists),
+		len(groceries),
+		len(meals),
+	)
 	for _, entry := range c.objects {
 		if entry.Resource == "recipe" {
 			recipe, err := c.readRecipe(ctx, entry.UID)
 			if err != nil {
 				return err
 			}
-			c.report("Recipe", "in_trash=%s description=%s directions=%s", describeField(recipe, "in_trash"), describeField(recipe, "description"), describeField(recipe, "directions"))
+			c.report(
+				"Recipe",
+				"in_trash=%s description=%s directions=%s",
+				describeField(recipe, "in_trash"),
+				describeField(recipe, "description"),
+				describeField(recipe, "directions"),
+			)
 			continue
 		}
 		obj, ok := listed[entry.UID]
@@ -799,7 +981,15 @@ func runInspect(ctx context.Context, p *prober, email, password, statePath strin
 		}
 		switch entry.Resource {
 		case "groceries":
-			c.report("Item", "%v: aisle=%s, aisle_uid known=%t, empty=%t, list_uid known=%t", obj["name"], describeField(obj, "aisle"), knownAisles[obj["aisle_uid"]], obj["aisle_uid"] == "", knownLists[obj["list_uid"]])
+			c.report(
+				"Item",
+				"%v: aisle=%s, aisle_uid known=%t, empty=%t, list_uid known=%t",
+				obj["name"],
+				describeField(obj, "aisle"),
+				knownAisles[obj["aisle_uid"]],
+				obj["aisle_uid"] == "",
+				knownLists[obj["list_uid"]],
+			)
 		default:
 			c.report(entry.Resource, "%v: listed, date=%s", obj["name"], describeField(obj, "date"))
 		}
@@ -811,7 +1001,13 @@ func runInspect(ctx context.Context, p *prober, email, password, statePath strin
 // objects. Stage 1 edits the recipe without a new hash, deletes one item, and moves the
 // meal to tomorrow. After a device has synced that, stage 2 restores the item and makes
 // a recipe edit with a new hash.
-func runFollowup(ctx context.Context, p *prober, password string, opts writeOptions, stage int) error {
+func runFollowup(
+	ctx context.Context,
+	p *prober,
+	password string,
+	opts writeOptions,
+	stage int,
+) error {
 	if stage != 1 && stage != 2 {
 		return fmt.Errorf("%w: -followup must be 1 or 2", errGuard)
 	}
@@ -957,7 +1153,12 @@ func runCleanup(ctx context.Context, p *prober, password string, opts writeOptio
 				return err
 			}
 			if !accepted(res) {
-				return fmt.Errorf("%w: cleanup of %s: %s", errUnexpected, resource, describeOutcome(res))
+				return fmt.Errorf(
+					"%w: cleanup of %s: %s",
+					errUnexpected,
+					resource,
+					describeOutcome(res),
+				)
 			}
 			removed++
 		}
@@ -971,7 +1172,11 @@ func runCleanup(ctx context.Context, p *prober, password string, opts writeOptio
 		if err != nil {
 			return err
 		}
-		c.report("Recipe", "left for the owner to empty from the trash; in_trash=%s", describeField(recipe, "in_trash"))
+		c.report(
+			"Recipe",
+			"left for the owner to empty from the trash; in_trash=%s",
+			describeField(recipe, "in_trash"),
+		)
 	}
 	if err := c.notify(ctx, "Notify"); err != nil {
 		return err

@@ -48,7 +48,15 @@ func New(svc *service.Service, opts Options) *mcp.Server {
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: Version}, nil)
 	s.AddReceivingMiddleware(callTimeout(opts.CallTimeout))
-	mcp.AddTool(s, &mcp.Tool{Name: "ping", Description: "Health check; returns pong", Annotations: readOnly("Ping")}, ping)
+	mcp.AddTool(
+		s,
+		&mcp.Tool{
+			Name:        "ping",
+			Description: "Health check; returns pong",
+			Annotations: readOnly("Ping"),
+		},
+		ping,
+	)
 
 	t := &tools{svc: svc, log: opts.Logger}
 	t.registerRecipes(s)
@@ -87,7 +95,11 @@ type pingOutput struct {
 	Message string `json:"message"`
 }
 
-func ping(_ context.Context, _ *mcp.CallToolRequest, _ pingInput) (*mcp.CallToolResult, pingOutput, error) {
+func ping(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	_ pingInput,
+) (*mcp.CallToolResult, pingOutput, error) {
 	return nil, pingOutput{Message: "pong"}, nil
 }
 

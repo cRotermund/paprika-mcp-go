@@ -18,7 +18,12 @@ func Client(tb testing.TB, fake *fakepaprika.Server, logger *slog.Logger) *papri
 
 // ClientWith is [Client] with a chance to change the configuration, such as a
 // short request timeout.
-func ClientWith(tb testing.TB, fake *fakepaprika.Server, logger *slog.Logger, tweak func(*paprikaclient.Config)) *paprikaclient.Client {
+func ClientWith(
+	tb testing.TB,
+	fake *fakepaprika.Server,
+	logger *slog.Logger,
+	tweak func(*paprikaclient.Config),
+) *paprikaclient.Client {
 	tb.Helper()
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))

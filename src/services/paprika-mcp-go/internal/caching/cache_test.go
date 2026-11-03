@@ -58,7 +58,12 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	fake := fakepaprika.New(t)
-	return &env{fake: fake, src: testsupport.Client(t, fake, nil), clock: newClock(), logs: &bytes.Buffer{}}
+	return &env{
+		fake:  fake,
+		src:   testsupport.Client(t, fake, nil),
+		clock: newClock(),
+		logs:  &bytes.Buffer{},
+	}
 }
 
 func (e *env) newCache(store indexstore.Store) *caching.Cache {
@@ -97,11 +102,17 @@ func (e *env) recipeFetches() int {
 }
 
 func seedThree(e *env) {
-	e.fake.Seed("categories",
+	e.fake.Seed(
+		"categories",
 		fakepaprika.SampleCategory("CAT-SOUP", "Soups"),
 		fakepaprika.SampleCategory("CAT-DESSERT", "Desserts"),
 	)
-	e.fake.SeedRecipe(testsupport.Recipe("R1", "Chicken Soup", "chicken\ncarrots\nonion", "CAT-SOUP"))
+	e.fake.SeedRecipe(testsupport.Recipe(
+		"R1",
+		"Chicken Soup",
+		"chicken\ncarrots\nonion",
+		"CAT-SOUP",
+	))
 	e.fake.SeedRecipe(testsupport.Recipe("R2", "Apple Pie", "apples\nsugar\nflour", "CAT-DESSERT"))
 	e.fake.SeedRecipe(testsupport.Recipe("R3", "Roast Dinner", "chicken\npotatoes"))
 }
@@ -134,12 +145,24 @@ func TestRefreshOnlyOnCounterChange(t *testing.T) {
 	}{
 		{"inside the window nothing is checked", 30 * time.Second, nil, 1, 1},
 		{"past the window with no change checks status only", 31 * time.Second, nil, 2, 1},
-		{"a changed counter reloads categories", 61 * time.Second, func() {
-			e.fake.Seed("categories", fakepaprika.SampleCategory("CAT-NEW", "Salads"))
-		}, 3, 2},
-		{"a change to another resource does not reload categories", 61 * time.Second, func() {
-			e.fake.Seed("meals", fakepaprika.SampleMeal("M1", "x", "2030-01-02 00:00:00", "T"))
-		}, 4, 2},
+		{
+			"a changed counter reloads categories",
+			61 * time.Second,
+			func() {
+				e.fake.Seed("categories", fakepaprika.SampleCategory("CAT-NEW", "Salads"))
+			},
+			3,
+			2,
+		},
+		{
+			"a change to another resource does not reload categories",
+			61 * time.Second,
+			func() {
+				e.fake.Seed("meals", fakepaprika.SampleMeal("M1", "x", "2030-01-02 00:00:00", "T"))
+			},
+			4,
+			2,
+		},
 	}
 	for _, s := range steps {
 		t.Run(s.name, func(t *testing.T) {
@@ -208,7 +231,12 @@ func TestHashDiffing(t *testing.T) {
 		t.Errorf("a pass with no changes fetched %d more recipes", got-3)
 	}
 
-	e.fake.SeedRecipe(testsupport.Recipe("R1", "Chicken Noodle Soup", "chicken\nnoodles", "CAT-SOUP"))
+	e.fake.SeedRecipe(testsupport.Recipe(
+		"R1",
+		"Chicken Noodle Soup",
+		"chicken\nnoodles",
+		"CAT-SOUP",
+	))
 	e.fake.SeedRecipe(testsupport.Recipe("R4", "Brand New", "kale"))
 	e.fake.SeedRecipe(map[string]any{"uid": "R2", "deleted": true})
 	if err := c.Sync(ctx); err != nil {
@@ -255,7 +283,12 @@ func TestBodyCache(t *testing.T) {
 	}
 
 	// The recipe changes elsewhere: the index catches up, the old body must not be served.
-	e.fake.SeedRecipe(testsupport.Recipe("R1", "Chicken Noodle Soup", "chicken\nnoodles", "CAT-SOUP"))
+	e.fake.SeedRecipe(testsupport.Recipe(
+		"R1",
+		"Chicken Noodle Soup",
+		"chicken\nnoodles",
+		"CAT-SOUP",
+	))
 	e.clock.Advance(2 * time.Minute)
 	r, err := c.Recipe(ctx, "R1")
 	if err != nil {
@@ -275,8 +308,11 @@ func TestBodyCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	seedThree(e)
-	c := caching.New(e.src, caching.Options{Now: e.clock.Now, BodyCacheSize: 2,
-		Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	c := caching.New(e.src, caching.Options{
+		Now:           e.clock.Now,
+		BodyCacheSize: 2,
+		Logger:        slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+	})
 	if err := c.Sync(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +337,9 @@ func newFileStore(t *testing.T) (indexstore.Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "index.json.gz")
 	store, err := indexstore.New(context.Background(), indexstore.Config{
-		Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: caching.SnapshotFormatVersion,
+		Mode:          indexstore.ModeFilesystem,
+		FilePath:      path,
+		FormatVersion: caching.SnapshotFormatVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -455,24 +493,50 @@ func TestUnusableSnapshotIsIgnored(t *testing.T) {
 		write func(t *testing.T, path string)
 	}{
 		{"garbage", func(t *testing.T, path string) { writeFile(t, path, []byte("not gzip")) }},
-		{"other format version", func(t *testing.T, path string) {
-			other, err := indexstore.New(ctx, indexstore.Config{Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: 99})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := other.Save(ctx, indexstore.Snapshot{Payload: []byte(`{"complete":true,"recipes":[]}`)}); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"payload of another shape", func(t *testing.T, path string) {
-			other, err := indexstore.New(ctx, indexstore.Config{Mode: indexstore.ModeFilesystem, FilePath: path, FormatVersion: caching.SnapshotFormatVersion})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := other.Save(ctx, indexstore.Snapshot{Payload: []byte(`["nope"]`)}); err != nil {
-				t.Fatal(err)
-			}
-		}},
+		{
+			"other format version",
+			func(t *testing.T, path string) {
+				other, err := indexstore.New(
+					ctx,
+					indexstore.Config{
+						Mode:          indexstore.ModeFilesystem,
+						FilePath:      path,
+						FormatVersion: 99,
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := other.Save(
+					ctx,
+					indexstore.Snapshot{Payload: []byte(`{"complete":true,"recipes":[]}`)},
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			"payload of another shape",
+			func(t *testing.T, path string) {
+				other, err := indexstore.New(
+					ctx,
+					indexstore.Config{
+						Mode:          indexstore.ModeFilesystem,
+						FilePath:      path,
+						FormatVersion: caching.SnapshotFormatVersion,
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := other.Save(
+					ctx,
+					indexstore.Snapshot{Payload: []byte(`["nope"]`)},
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
@@ -504,7 +568,13 @@ func TestPartialSnapshotResumesButDoesNotServe(t *testing.T) {
 	store, _ := newFileStore(t)
 
 	gate := newGatedSource(e.src, "R2")
-	first := caching.New(gate, caching.Options{Now: e.clock.Now, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	first := caching.New(
+		gate,
+		caching.Options{
+			Now:    e.clock.Now,
+			Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		},
+	)
 	errc := make(chan error, 1)
 	go func() { errc <- first.Sync(ctx) }()
 	gate.waitBlocked(t)
@@ -544,10 +614,18 @@ type gatedSource struct {
 }
 
 func newGatedSource(c *paprikaclient.Client, blockUID string) *gatedSource {
-	return &gatedSource{Client: c, blockUID: blockUID, blocked: make(chan struct{}), release: make(chan error, 1)}
+	return &gatedSource{
+		Client:   c,
+		blockUID: blockUID,
+		blocked:  make(chan struct{}),
+		release:  make(chan error, 1),
+	}
 }
 
-func (g *gatedSource) GetRecipe(ctx context.Context, uid string) (paprikaclient.Entry[paprikaclient.Recipe], error) {
+func (g *gatedSource) GetRecipe(
+	ctx context.Context,
+	uid string,
+) (paprikaclient.Entry[paprikaclient.Recipe], error) {
 	if uid == g.blockUID {
 		g.once.Do(func() { close(g.blocked) })
 		select {
@@ -580,7 +658,13 @@ func TestStillLoadingUntilFirstPassFinishes(t *testing.T) {
 	e := newEnv(t)
 	seedThree(e)
 	gate := newGatedSource(e.src, "R2")
-	c := caching.New(gate, caching.Options{Now: e.clock.Now, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	c := caching.New(
+		gate,
+		caching.Options{
+			Now:    e.clock.Now,
+			Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		},
+	)
 
 	done := make(chan struct{})
 	go func() { _ = c.Sync(ctx); close(done) }()
@@ -616,7 +700,14 @@ func TestRunRetriesAfterTemporaryFailure(t *testing.T) {
 	defer cancel()
 	e := newEnv(t)
 	seedThree(e)
-	e.fake.Inject(fakepaprika.Fault{Method: "GET", Path: recipesPath, Times: 2, Kind: fakepaprika.FaultStatus, Status: 500, Message: "boom"})
+	e.fake.Inject(fakepaprika.Fault{
+		Method:  "GET",
+		Path:    recipesPath,
+		Times:   2,
+		Kind:    fakepaprika.FaultStatus,
+		Status:  500,
+		Message: "boom",
+	})
 	c := e.newCache(nil)
 	done := make(chan struct{})
 	go func() { c.Run(ctx); close(done) }()
@@ -633,11 +724,17 @@ func TestRunRetriesAfterTemporaryFailure(t *testing.T) {
 func TestSearch(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
-	e.fake.Seed("categories",
+	e.fake.Seed(
+		"categories",
 		fakepaprika.SampleCategory("CAT-SOUP", "Soups"),
 		fakepaprika.SampleCategory("CAT-DESSERT", "Desserts"),
 	)
-	add := func(uid, name, ingredients, source string, rating int, fav, trash bool, cats ...string) {
+	add := func(
+		uid, name, ingredients, source string,
+		rating int,
+		fav, trash bool,
+		cats ...string,
+	) {
 		r := testsupport.Recipe(uid, name, ingredients, cats...)
 		r["source"] = source
 		r["rating"] = rating
@@ -673,14 +770,26 @@ func TestSearch(t *testing.T) {
 		{"no match", caching.Query{Text: "zucchini"}, nil},
 		{"directions are not searchable", caching.Query{Text: "boil"}, nil},
 		{"trashed hidden by default", caching.Query{Text: "old"}, nil},
-		{"trashed included on request", caching.Query{Text: "old", IncludeTrashed: true}, []string{"D"}},
+		{
+			"trashed included on request",
+			caching.Query{Text: "old", IncludeTrashed: true},
+			[]string{"D"},
+		},
 		{"empty query lists by name", caching.Query{}, []string{"E", "B", "C", "F", "A"}},
 		{"favorites only", caching.Query{Favorite: &yes}, []string{"E", "A"}},
 		{"non favorites only", caching.Query{Favorite: &no}, []string{"B", "C", "F"}},
 		{"minimum rating", caching.Query{MinRating: 4}, []string{"E", "A"}},
 		{"category filter", caching.Query{CategoryUID: "CAT-SOUP"}, []string{"A"}},
-		{"category filter with trashed", caching.Query{CategoryUID: "CAT-SOUP", IncludeTrashed: true}, []string{"D", "A"}},
-		{"filters combine with text", caching.Query{Text: "tomato", MinRating: 4, Favorite: &yes}, []string{"A"}},
+		{
+			"category filter with trashed",
+			caching.Query{CategoryUID: "CAT-SOUP", IncludeTrashed: true},
+			[]string{"D", "A"},
+		},
+		{
+			"filters combine with text",
+			caching.Query{Text: "tomato", MinRating: 4, Favorite: &yes},
+			[]string{"A"},
+		},
 		{"punctuation is ignored", caching.Query{Text: "  tomato, soup! "}, []string{"A"}},
 	}
 	for _, tt := range tests {
@@ -788,7 +897,11 @@ func TestConcurrentUse(t *testing.T) {
 					_ = c.Fresh(ctx)
 				case 5:
 					_, _ = c.Snapshot(ctx)
-					e.fake.SeedRecipe(testsupport.Recipe("R3", "Roast Dinner", "chicken\npotatoes\n"+strings.Repeat("x", j)))
+					e.fake.SeedRecipe(testsupport.Recipe(
+						"R3",
+						"Roast Dinner",
+						"chicken\npotatoes\n"+strings.Repeat("x", j),
+					))
 				}
 			}
 		}()
@@ -817,7 +930,10 @@ func TestLoadedIsLoggedOnceWithoutNames(t *testing.T) {
 	if n := strings.Count(out, "recipe index loaded"); n != 1 {
 		t.Fatalf("loaded lines = %d, want 1:\n%s", n, out)
 	}
-	if !strings.Contains(out, "recipes=3") || !strings.Contains(out, "duration=") || !strings.Contains(out, "level=INFO") {
+	if !strings.Contains(
+		out,
+		"recipes=3",
+	) || !strings.Contains(out, "duration=") || !strings.Contains(out, "level=INFO") {
 		t.Errorf("log = %s", out)
 	}
 	for _, name := range []string{"Chicken Soup", "Apple Pie", "Roast Dinner"} {

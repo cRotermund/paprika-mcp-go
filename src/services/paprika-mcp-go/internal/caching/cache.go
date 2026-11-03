@@ -44,7 +44,10 @@ type Source interface {
 	GroceryLists(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryList], error)
 	Groceries(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.Grocery], error)
 	GroceryAisles(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryAisle], error)
-	GroceryIngredients(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryIngredient], error)
+	GroceryIngredients(ctx context.Context) (
+		[]paprikaclient.Entry[paprikaclient.GroceryIngredient],
+		error,
+	)
 }
 
 // Options configures [New]. Zero values select the defaults.
@@ -168,12 +171,29 @@ func New(src Source, opts Options) *Cache {
 	c.categories = &resource[paprikaclient.Category]{name: ResourceCategories, load: src.Categories}
 	c.meals = &resource[paprikaclient.Meal]{name: ResourceMeals, load: src.Meals}
 	c.mealTypes = &resource[paprikaclient.MealType]{name: ResourceMealTypes, load: src.MealTypes}
-	c.lists = &resource[paprikaclient.GroceryList]{name: ResourceGroceryLists, load: src.GroceryLists}
+	c.lists = &resource[paprikaclient.GroceryList]{
+		name: ResourceGroceryLists,
+		load: src.GroceryLists,
+	}
 	c.groceries = &resource[paprikaclient.Grocery]{name: ResourceGroceries, load: src.Groceries}
-	c.aisles = &resource[paprikaclient.GroceryAisle]{name: ResourceGroceryAisles, load: src.GroceryAisles}
-	c.ingredients = &resource[paprikaclient.GroceryIngredient]{name: ResourceGroceryIngredients, load: src.GroceryIngredients}
+	c.aisles = &resource[paprikaclient.GroceryAisle]{
+		name: ResourceGroceryAisles,
+		load: src.GroceryAisles,
+	}
+	c.ingredients = &resource[paprikaclient.GroceryIngredient]{
+		name: ResourceGroceryIngredients,
+		load: src.GroceryIngredients,
+	}
 	c.byName = map[string]invalidator{}
-	for _, r := range []invalidator{c.categories, c.meals, c.mealTypes, c.lists, c.groceries, c.aisles, c.ingredients} {
+	for _, r := range []invalidator{
+		c.categories,
+		c.meals,
+		c.mealTypes,
+		c.lists,
+		c.groceries,
+		c.aisles,
+		c.ingredients,
+	} {
 		c.byName[r.resourceName()] = r
 	}
 	return c
@@ -210,7 +230,11 @@ func (c *Cache) Run(ctx context.Context) {
 			return
 		}
 		if errors.Is(err, paprikaclient.ErrUnauthorized) {
-			c.log.Error("recipe sync cannot sign in to Paprika; check the server's credentials", "retry_in", wait)
+			c.log.Error(
+				"recipe sync cannot sign in to Paprika; check the server's credentials",
+				"retry_in",
+				wait,
+			)
 		} else {
 			c.log.Warn("recipe sync failed; will retry", "error", err, "retry_in", wait)
 		}
@@ -337,7 +361,13 @@ func (r *resource[T]) get(ctx context.Context, c *Cache) ([]paprikaclient.Entry[
 	defer r.mu.Unlock()
 	if statusErr != nil {
 		if r.loaded {
-			c.log.Warn("could not check for changes; serving held list", "resource", r.name, "error", statusErr)
+			c.log.Warn(
+				"could not check for changes; serving held list",
+				"resource",
+				r.name,
+				"error",
+				statusErr,
+			)
 			return r.entries, nil
 		}
 		return nil, statusErr
@@ -359,7 +389,10 @@ func (r *resource[T]) get(ctx context.Context, c *Cache) ([]paprikaclient.Entry[
 }
 
 // Categories returns every recipe category.
-func (c *Cache) Categories(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.Category], error) {
+func (c *Cache) Categories(ctx context.Context) (
+	[]paprikaclient.Entry[paprikaclient.Category],
+	error,
+) {
 	return c.categories.get(ctx, c)
 }
 
@@ -369,27 +402,42 @@ func (c *Cache) Meals(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.
 }
 
 // MealTypes returns the account's meal types.
-func (c *Cache) MealTypes(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.MealType], error) {
+func (c *Cache) MealTypes(ctx context.Context) (
+	[]paprikaclient.Entry[paprikaclient.MealType],
+	error,
+) {
 	return c.mealTypes.get(ctx, c)
 }
 
 // GroceryLists returns every grocery list.
-func (c *Cache) GroceryLists(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryList], error) {
+func (c *Cache) GroceryLists(ctx context.Context) (
+	[]paprikaclient.Entry[paprikaclient.GroceryList],
+	error,
+) {
 	return c.lists.get(ctx, c)
 }
 
 // Groceries returns every grocery item on every list.
-func (c *Cache) Groceries(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.Grocery], error) {
+func (c *Cache) Groceries(ctx context.Context) (
+	[]paprikaclient.Entry[paprikaclient.Grocery],
+	error,
+) {
 	return c.groceries.get(ctx, c)
 }
 
 // GroceryAisles returns every store aisle.
-func (c *Cache) GroceryAisles(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryAisle], error) {
+func (c *Cache) GroceryAisles(ctx context.Context) (
+	[]paprikaclient.Entry[paprikaclient.GroceryAisle],
+	error,
+) {
 	return c.aisles.get(ctx, c)
 }
 
 // GroceryIngredients returns the remembered ingredient-to-aisle choices.
-func (c *Cache) GroceryIngredients(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryIngredient], error) {
+func (c *Cache) GroceryIngredients(ctx context.Context) (
+	[]paprikaclient.Entry[paprikaclient.GroceryIngredient],
+	error,
+) {
 	return c.ingredients.get(ctx, c)
 }
 
@@ -397,7 +445,10 @@ func (c *Cache) GroceryIngredients(ctx context.Context) ([]paprikaclient.Entry[p
 // equals the index's hash. Otherwise, and always while the index is loading, the
 // recipe is read from the API. A recipe Paprika does not have is
 // [paprikaclient.ErrNotFound].
-func (c *Cache) Recipe(ctx context.Context, uid string) (paprikaclient.Entry[paprikaclient.Recipe], error) {
+func (c *Cache) Recipe(
+	ctx context.Context,
+	uid string,
+) (paprikaclient.Entry[paprikaclient.Recipe], error) {
 	if c.Progress().Ready {
 		if err := c.ensureRecipesFresh(ctx); err != nil {
 			c.log.Warn("could not check for recipe changes; serving held data", "error", err)

@@ -180,13 +180,19 @@ func validateBaseURL(raw string) (string, error) {
 	case "https":
 	case "http":
 		if !isLoopback(u.Hostname()) {
-			return "", fmt.Errorf("%w: plain HTTP is only allowed for loopback hosts", ErrInvalidArgument)
+			return "", fmt.Errorf(
+				"%w: plain HTTP is only allowed for loopback hosts",
+				ErrInvalidArgument,
+			)
 		}
 	default:
 		return "", fmt.Errorf("%w: base URL scheme must be https", ErrInvalidArgument)
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("%w: base URL must be only scheme, host, and port", ErrInvalidArgument)
+		return "", fmt.Errorf(
+			"%w: base URL must be only scheme, host, and port",
+			ErrInvalidArgument,
+		)
 	}
 	return strings.TrimRight(u.Scheme+"://"+u.Host+u.Path, "/"), nil
 }
@@ -218,7 +224,12 @@ type response struct {
 
 // do runs a request with authentication, and repeats it once after a 401 and a
 // fresh login. It returns the envelope's result.
-func (c *Client) do(ctx context.Context, method, path string, body []byte, contentType string) (json.RawMessage, error) {
+func (c *Client) do(
+	ctx context.Context,
+	method, path string,
+	body []byte,
+	contentType string,
+) (json.RawMessage, error) {
 	req := request{
 		method:        method,
 		path:          path,
@@ -271,7 +282,11 @@ func (c *Client) ensureToken(ctx context.Context) (string, error) {
 		if now.Before(c.loginBlockedUntil) {
 			wait := c.loginBlockedUntil.Sub(now)
 			c.mu.Unlock()
-			return "", fmt.Errorf("%w: login failed recently, next attempt in %s", ErrUnauthorized, wait.Round(time.Second))
+			return "", fmt.Errorf(
+				"%w: login failed recently, next attempt in %s",
+				ErrUnauthorized,
+				wait.Round(time.Second),
+			)
 		}
 		call = &loginCall{done: make(chan struct{})}
 		c.loginCall = call
@@ -343,7 +358,12 @@ func (c *Client) login(ctx context.Context) (string, error) {
 		if env.Error != nil {
 			code = env.Error.Code
 		}
-		return "", fmt.Errorf("%w: login rejected (HTTP %d, code %d)", ErrUnauthorized, res.status, code)
+		return "", fmt.Errorf(
+			"%w: login rejected (HTTP %d, code %d)",
+			ErrUnauthorized,
+			res.status,
+			code,
+		)
 	}
 	c.log.Info("paprika login succeeded")
 	return env.Result.Token, nil
@@ -403,7 +423,11 @@ func (c *Client) send(ctx context.Context, r request) (*response, error) {
 	}()
 
 	if wait := c.pausedFor(); wait > 0 {
-		return nil, fmt.Errorf("%w: paused after repeated timeouts, resuming in %s", ErrTemporary, wait.Round(time.Second))
+		return nil, fmt.Errorf(
+			"%w: paused after repeated timeouts, resuming in %s",
+			ErrTemporary,
+			wait.Round(time.Second),
+		)
 	}
 	if err := c.pace(ctx); err != nil {
 		return nil, err
@@ -446,8 +470,17 @@ func (c *Client) send(ctx context.Context, r request) (*response, error) {
 		return nil, c.transportFailure(ctx, r, err)
 	}
 	c.noteResponse()
-	c.log.Debug("paprika request",
-		"method", r.method, "path", r.path, "status", resp.StatusCode, "duration", time.Since(start))
+	c.log.Debug(
+		"paprika request",
+		"method",
+		r.method,
+		"path",
+		r.path,
+		"status",
+		resp.StatusCode,
+		"duration",
+		time.Since(start),
+	)
 	return &response{status: resp.StatusCode, body: data}, nil
 }
 
@@ -492,7 +525,10 @@ func (c *Client) transportFailure(ctx context.Context, r request, err error) err
 	}
 
 	var netErr net.Error
-	timedOut := errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
+	timedOut := errors.Is(
+		err,
+		context.DeadlineExceeded,
+	) || (errors.As(err, &netErr) && netErr.Timeout())
 	cause := "request failed"
 	if timedOut {
 		cause = "request timed out"
@@ -501,7 +537,11 @@ func (c *Client) transportFailure(ctx context.Context, r request, err error) err
 		if c.consecutiveTO >= c.cfg.TimeoutThreshold {
 			c.consecutiveTO = 0
 			c.pausedUntil = c.cfg.Now().Add(c.cfg.TimeoutPause)
-			c.log.Warn("paprika requests paused after repeated timeouts", "pause", c.cfg.TimeoutPause)
+			c.log.Warn(
+				"paprika requests paused after repeated timeouts",
+				"pause",
+				c.cfg.TimeoutPause,
+			)
 		}
 		c.mu.Unlock()
 	}

@@ -57,7 +57,13 @@ func newS3Store(ctx context.Context, cfg Config) (*s3Store, error) {
 	if timeout <= 0 {
 		timeout = defaultOperationTimeout
 	}
-	return &s3Store{client: client, bucket: cfg.S3Bucket, key: key, version: cfg.FormatVersion, timeout: timeout}, nil
+	return &s3Store{
+		client:  client,
+		bucket:  cfg.S3Bucket,
+		key:     key,
+		version: cfg.FormatVersion,
+		timeout: timeout,
+	}, nil
 }
 
 func (s *s3Store) Load(ctx context.Context) (Snapshot, bool, error) {

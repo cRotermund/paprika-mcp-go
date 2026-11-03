@@ -433,9 +433,19 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, rec *Request) int
 		case FaultEnvelopeError:
 			return writeJSON(w, r, http.StatusOK, errorEnvelope(fault.Code, fault.Message))
 		case FaultUnauthorized:
-			return writeJSON(w, r, http.StatusUnauthorized, errorEnvelope(0, "Invalid or expired credentials."))
+			return writeJSON(
+				w,
+				r,
+				http.StatusUnauthorized,
+				errorEnvelope(0, "Invalid or expired credentials."),
+			)
 		case FaultUnavailable:
-			return writeJSON(w, r, http.StatusServiceUnavailable, errorEnvelope(0, "Service unavailable."))
+			return writeJSON(
+				w,
+				r,
+				http.StatusServiceUnavailable,
+				errorEnvelope(0, "Service unavailable."),
+			)
 		case FaultStatus:
 			return writeJSON(w, r, fault.Status, errorEnvelope(fault.Code, fault.Message))
 		case FaultRedirect:
@@ -465,7 +475,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, rec *Request) int
 	rec.Authorized = token != "" && s.tokens[token]
 	s.mu.Unlock()
 	if !rec.Authorized {
-		return writeJSON(w, r, http.StatusUnauthorized, errorEnvelope(0, "Invalid or expired credentials."))
+		return writeJSON(
+			w,
+			r,
+			http.StatusUnauthorized,
+			errorEnvelope(0, "Invalid or expired credentials."),
+		)
 	}
 	if !strings.HasPrefix(r.URL.Path, syncPrefix) {
 		return writeJSON(w, r, http.StatusNotFound, errorEnvelope(0, "Not found."))
@@ -514,7 +529,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request, rec *Request) int
 	token := fmt.Sprintf("fake-token-%d", s.tokenSeq)
 	s.tokens[token] = true
 	s.lastToken = token
-	return writeJSON(w, r, http.StatusOK, map[string]any{"result": map[string]string{"token": token}})
+	return writeJSON(
+		w,
+		r,
+		http.StatusOK,
+		map[string]any{"result": map[string]string{"token": token}},
+	)
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request, rec *Request, rest string) int {
@@ -688,14 +708,26 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 	if err != nil {
 		panic(err)
 	}
-	return writeRawStatus(w, r, status, raw, strings.Contains(r.Header.Get("Accept-Encoding"), "gzip"))
+	return writeRawStatus(
+		w,
+		r,
+		status,
+		raw,
+		strings.Contains(r.Header.Get("Accept-Encoding"), "gzip"),
+	)
 }
 
 func writeRaw(w http.ResponseWriter, r *http.Request, body []byte, compress bool) int {
 	return writeRawStatus(w, r, http.StatusOK, body, compress)
 }
 
-func writeRawStatus(w http.ResponseWriter, _ *http.Request, status int, body []byte, compress bool) int {
+func writeRawStatus(
+	w http.ResponseWriter,
+	_ *http.Request,
+	status int,
+	body []byte,
+	compress bool,
+) int {
 	w.Header().Set("Content-Type", "application/json")
 	if compress {
 		var buf bytes.Buffer

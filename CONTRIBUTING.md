@@ -163,6 +163,23 @@ Additional guidelines:
 
 - **Go:** Follow standard Go conventions. Use `gofmt`. Group imports (stdlib,
   third-party, internal).
+- **Long lists:** When a parameter, argument, or field list does not fit
+  comfortably on one line (it already wraps, or the line exceeds 100 columns,
+  counting a tab as 4), put every item on its own line with a trailing comma
+  and the closing bracket on its own line. Never wrap several items per line.
+  Short lists that fit on one line stay as they are. This applies to function
+  and method parameters, call arguments, and struct, slice, and map literals,
+  including table-driven test rows that wrap. A longer file is fine; the goal
+  is lists that are easy to scan and make ordering clear.
+
+  ```go
+  func (t *tools) getRecipe(
+  	ctx context.Context,
+  	_ *mcp.CallToolRequest,
+  	in getRecipeInput,
+  ) (*mcp.CallToolResult, getRecipeOutput, error) {
+  ```
+
 - **General:** No commented-out code in commits. Trim trailing whitespace. End
   files with a newline.
 

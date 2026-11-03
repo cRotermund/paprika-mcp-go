@@ -21,7 +21,8 @@ const (
 )
 
 func seed(f *fakepaprika.Server) {
-	f.Seed("categories",
+	f.Seed(
+		"categories",
 		fakepaprika.SampleCategory("CAT-DINNER", "Dinner"),
 		fakepaprika.SampleCategory("CAT-SOUP", "Soups"),
 		withParent(fakepaprika.SampleCategory("CAT-STEW", "Stews"), "CAT-DINNER"),
@@ -38,28 +39,36 @@ func seed(f *fakepaprika.Server) {
 		f.SeedRecipe(testsupport.Recipe(fmt.Sprintf("P%d", i), fmt.Sprintf("Pasta %d", i), "pasta"))
 	}
 
-	f.Seed("mealtypes",
+	f.Seed(
+		"mealtypes",
 		fakepaprika.SampleMealType(typeDinner, "Dinner", 2),
 		fakepaprika.SampleMealType(typeBreakfast, "Breakfast", 0),
 	)
 	linked := fakepaprika.SampleMeal("M-LINK", "Soup night", "2030-03-10 00:00:00", typeDinner)
 	linked["recipe_uid"] = "R1"
-	f.Seed("meals",
+	f.Seed(
+		"meals",
 		linked,
 		fakepaprika.SampleMeal("M-B", "Pancakes", "2030-03-10 00:00:00", typeBreakfast),
 		fakepaprika.SampleMeal("M-EARLY", "Early", "2030-03-01 00:00:00", typeDinner),
 		fakepaprika.SampleMeal("M-LATE", "Late", "2030-03-31 00:00:00", typeDinner),
 	)
 
-	f.Seed("groceryaisles", fakepaprika.SampleAisle("AISLE-1", "Produce"), fakepaprika.SampleAisle("AISLE-2", "Dairy"))
-	f.Seed("grocerylists",
+	f.Seed(
+		"groceryaisles",
+		fakepaprika.SampleAisle("AISLE-1", "Produce"),
+		fakepaprika.SampleAisle("AISLE-2", "Dairy"),
+	)
+	f.Seed(
+		"grocerylists",
 		fakepaprika.SampleGroceryList(listParty, "Party", false),
 		fakepaprika.SampleGroceryList(listMain, "Groceries", true),
 	)
 	bought := fakepaprika.SampleGrocery("G-BOUGHT", "milk", listMain, "AISLE-2")
 	bought["purchased"] = true
 	bought["aisle"] = ""
-	f.Seed("groceries",
+	f.Seed(
+		"groceries",
 		fakepaprika.SampleGrocery("G-1", "carrots", listMain, "AISLE-1"),
 		fakepaprika.SampleGrocery("G-2", "lettuce", listMain, "AISLE-1"),
 		bought,
@@ -100,7 +109,11 @@ func TestSearchRecipes(t *testing.T) {
 		{"category by name", service.SearchParams{Category: "soups"}, []string{"R1"}},
 		{"category by uid", service.SearchParams{Category: "CAT-CHILI"}, []string{"R2"}},
 		{"trashed hidden", service.SearchParams{Query: "soup"}, []string{"R1"}},
-		{"trashed shown", service.SearchParams{Query: "soup", IncludeTrashed: true}, []string{"R3", "R1"}},
+		{
+			"trashed shown",
+			service.SearchParams{Query: "soup", IncludeTrashed: true},
+			[]string{"R3", "R1"},
+		},
 		{"favorite", service.SearchParams{Favorite: &yes}, nil},
 	}
 	for _, tt := range tests {
@@ -136,13 +149,28 @@ func TestSearchRecipesValidation(t *testing.T) {
 		wantKind service.Kind
 		wantText string
 	}{
-		{"unknown category names the value", service.SearchParams{Category: "Nonexistent"}, service.KindNotFound, `"Nonexistent"`},
+		{
+			"unknown category names the value",
+			service.SearchParams{Category: "Nonexistent"},
+			service.KindNotFound,
+			`"Nonexistent"`,
+		},
 		{"ambiguous category", service.SearchParams{Category: "twin"}, service.KindInvalid, "uid"},
 		{"rating too high", service.SearchParams{MinRating: 6}, service.KindInvalid, "min_rating"},
 		{"rating negative", service.SearchParams{MinRating: -1}, service.KindInvalid, "min_rating"},
-		{"query too long", service.SearchParams{Query: strings.Repeat("a", 201)}, service.KindInvalid, "query"},
+		{
+			"query too long",
+			service.SearchParams{Query: strings.Repeat("a", 201)},
+			service.KindInvalid,
+			"query",
+		},
 		{"bad cursor", service.SearchParams{Cursor: "garbage"}, service.KindInvalid, "cursor"},
-		{"cursor past the end", service.SearchParams{Cursor: "bzE6OTk5"}, service.KindInvalid, "cursor"},
+		{
+			"cursor past the end",
+			service.SearchParams{Cursor: "bzE6OTk5"},
+			service.KindInvalid,
+			"cursor",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -167,7 +195,10 @@ func TestPagination(t *testing.T) {
 	cursor := ""
 	pages := 0
 	for {
-		page, err := svc.SearchRecipes(ctx, service.SearchParams{Query: "pasta", Limit: 3, Cursor: cursor})
+		page, err := svc.SearchRecipes(
+			ctx,
+			service.SearchParams{Query: "pasta", Limit: 3, Cursor: cursor},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -236,7 +267,14 @@ func TestListCategoriesTree(t *testing.T) {
 	for _, c := range page.Items {
 		got = append(got, fmt.Sprintf("%d:%s", c.Depth, c.Path))
 	}
-	want := []string{"0:Dinner", "1:Dinner > Stews", "2:Dinner > Stews > Chili", "0:Soups", "0:Twin", "0:twin"}
+	want := []string{
+		"0:Dinner",
+		"1:Dinner > Stews",
+		"2:Dinner > Stews > Chili",
+		"0:Soups",
+		"0:Twin",
+		"0:twin",
+	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("tree = %v, want %v", got, want)
 	}
@@ -253,7 +291,11 @@ func TestListMeals(t *testing.T) {
 	for _, m := range page.Items {
 		got = append(got, m.UID+":"+m.Date+":"+m.MealType)
 	}
-	want := []string{"M-B:2030-03-10:Breakfast", "M-LINK:2030-03-10:Dinner", "M-LATE:2030-03-31:Dinner"}
+	want := []string{
+		"M-B:2030-03-10:Breakfast",
+		"M-LINK:2030-03-10:Dinner",
+		"M-LATE:2030-03-31:Dinner",
+	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("meals = %v, want %v", got, want)
 	}
@@ -276,7 +318,10 @@ func TestListMeals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := svc.ListMeals(ctx, tt.start, tt.end, 0, "")
-			if err == nil || kind(t, err) != service.KindInvalid || !strings.Contains(err.Error(), tt.wantText) {
+			if err == nil || kind(
+				t,
+				err,
+			) != service.KindInvalid || !strings.Contains(err.Error(), tt.wantText) {
 				t.Errorf("error = %v, want invalid mentioning %q", err, tt.wantText)
 			}
 		})
@@ -335,8 +380,17 @@ func TestGroceries(t *testing.T) {
 			for _, it := range res.Items {
 				names = append(names, it.Name)
 			}
-			if strings.Join(names, ",") != strings.Join(tt.want, ",") || res.ListName != tt.wantList {
-				t.Errorf("items = %v in %q, want %v in %q", names, res.ListName, tt.want, tt.wantList)
+			if strings.Join(
+				names,
+				",",
+			) != strings.Join(tt.want, ",") || res.ListName != tt.wantList {
+				t.Errorf(
+					"items = %v in %q, want %v in %q",
+					names,
+					res.ListName,
+					tt.want,
+					tt.wantList,
+				)
 			}
 		})
 	}
@@ -346,7 +400,13 @@ func TestGroceries(t *testing.T) {
 		t.Errorf("aisle fallback: %+v", res.Items[0])
 	}
 
-	if _, err := svc.ListGroceryItems(ctx, "Nope", false, 0, ""); kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"Nope"`) {
+	if _, err := svc.ListGroceryItems(
+		ctx,
+		"Nope",
+		false,
+		0,
+		"",
+	); kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"Nope"`) {
 		t.Errorf("unknown list error = %v", err)
 	}
 
@@ -367,9 +427,15 @@ func TestErrorMapping(t *testing.T) {
 		{
 			name: "paprika unavailable",
 			prepare: func(st *testsupport.Stack) {
-				st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: "/api/v2/sync/recipe/R1/", Times: -1, Kind: fakepaprika.FaultUnavailable})
+				st.Fake.Inject(fakepaprika.Fault{
+					Method: "GET",
+					Path:   "/api/v2/sync/recipe/R1/",
+					Times:  -1,
+					Kind:   fakepaprika.FaultUnavailable,
+				})
 			},
-			wantKind: service.KindTemporary, wantText: "temporarily unavailable",
+			wantKind: service.KindTemporary,
+			wantText: "temporarily unavailable",
 		},
 		{
 			name: "login failing is a configuration problem without detail",
@@ -377,17 +443,25 @@ func TestErrorMapping(t *testing.T) {
 				st.Fake.SetPassword("changed-elsewhere")
 				st.Fake.RevokeTokens()
 			},
-			wantKind: service.KindConfig, wantText: "server configuration problem",
-			banned: []string{"password", "401", "changed-elsewhere", "cook@example.test"},
+			wantKind: service.KindConfig,
+			wantText: "server configuration problem",
+			banned:   []string{"password", "401", "changed-elsewhere", "cook@example.test"},
 		},
 		{
 			name: "upstream error text never reaches the client",
 			prepare: func(st *testsupport.Stack) {
-				st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: "/api/v2/sync/recipe/R1/", Times: -1,
-					Kind: fakepaprika.FaultEnvelopeError, Code: 77, Message: "SECRET-UPSTREAM-DETAIL"})
+				st.Fake.Inject(fakepaprika.Fault{
+					Method:  "GET",
+					Path:    "/api/v2/sync/recipe/R1/",
+					Times:   -1,
+					Kind:    fakepaprika.FaultEnvelopeError,
+					Code:    77,
+					Message: "SECRET-UPSTREAM-DETAIL",
+				})
 			},
-			wantKind: service.KindTemporary, wantText: "unusable response",
-			banned: []string{"SECRET-UPSTREAM-DETAIL", "77"},
+			wantKind: service.KindTemporary,
+			wantText: "unusable response",
+			banned:   []string{"SECRET-UPSTREAM-DETAIL", "77"},
 		},
 	}
 	for _, tt := range tests {
@@ -420,7 +494,10 @@ func TestStillLoadingError(t *testing.T) {
 	cache := caching.New(testsupport.Client(t, fake, nil), caching.Options{})
 	svc := service.New(cache, nil)
 	_, err := svc.SearchRecipes(context.Background(), service.SearchParams{Query: "soup"})
-	if err == nil || kind(t, err) != service.KindLoading || !strings.Contains(err.Error(), "still loading") {
+	if err == nil || kind(
+		t,
+		err,
+	) != service.KindLoading || !strings.Contains(err.Error(), "still loading") {
 		t.Fatalf("error = %v, want a loading error", err)
 	}
 	// get_recipe is served from the API meanwhile.

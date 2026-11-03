@@ -56,16 +56,25 @@ func (s *syncBuffer) String() string {
 }
 
 // writeStack builds a stack over the shared seed, with logs captured.
-func writeStack(t *testing.T, extra func(*fakepaprika.Server), tweak func(*paprikaclient.Config)) (*testsupport.Stack, *syncBuffer) {
+func writeStack(
+	t *testing.T,
+	extra func(*fakepaprika.Server),
+	tweak func(*paprikaclient.Config),
+) (*testsupport.Stack, *syncBuffer) {
 	t.Helper()
 	logs := &syncBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	st := testsupport.NewStackWith(t, logger, func(f *fakepaprika.Server) {
-		seed(f)
-		if extra != nil {
-			extra(f)
-		}
-	}, tweak)
+	st := testsupport.NewStackWith(
+		t,
+		logger,
+		func(f *fakepaprika.Server) {
+			seed(f)
+			if extra != nil {
+				extra(f)
+			}
+		},
+		tweak,
+	)
 	st.Fake.ResetRequests()
 	return st, logs
 }
@@ -167,8 +176,12 @@ func TestCreateRecipe(t *testing.T) {
 	ctx := context.Background()
 	cats := []string{"soups", "Dinner", "CAT-SOUP"}
 	res, err := st.Service.CreateRecipe(ctx, service.RecipeFields{
-		Name: str("  MCP-TEST Lentil Soup "), Ingredients: str("1 cup lentils\r\n2 carrots"),
-		Directions: str("Simmer."), Rating: new(4), Favorite: new(true), Categories: &cats,
+		Name:        str("  MCP-TEST Lentil Soup "),
+		Ingredients: str("1 cup lentils\r\n2 carrots"),
+		Directions:  str("Simmer."),
+		Rating:      new(4),
+		Favorite:    new(true),
+		Categories:  &cats,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +207,13 @@ func TestCreateRecipe(t *testing.T) {
 		}
 	}
 	if body["rating"] != float64(4) || body["on_favorites"] != true || body["in_trash"] != false || body["deleted"] != false {
-		t.Errorf("flags = %v %v %v %v", body["rating"], body["on_favorites"], body["in_trash"], body["deleted"])
+		t.Errorf(
+			"flags = %v %v %v %v",
+			body["rating"],
+			body["on_favorites"],
+			body["in_trash"],
+			body["deleted"],
+		)
 	}
 	if body["description"] != "" || body["notes"] != "" {
 		t.Errorf("blank text fields should be empty strings: %v", body)
@@ -220,9 +239,24 @@ func TestCreateRecipeRejectsBeforeAnyRequest(t *testing.T) {
 	}{
 		{"no name", service.RecipeFields{}, service.KindInvalid, "name is required"},
 		{"blank name", service.RecipeFields{Name: str("  ")}, service.KindInvalid, "blank"},
-		{"bad rating", service.RecipeFields{Name: str("X"), Rating: new(9)}, service.KindInvalid, "rating"},
-		{"name too long", service.RecipeFields{Name: str(strings.Repeat("x", 501))}, service.KindInvalid, "too long"},
-		{"blank category", service.RecipeFields{Name: str("X"), Categories: &[]string{" "}}, service.KindInvalid, "blank"},
+		{
+			"bad rating",
+			service.RecipeFields{Name: str("X"), Rating: new(9)},
+			service.KindInvalid,
+			"rating",
+		},
+		{
+			"name too long",
+			service.RecipeFields{Name: str(strings.Repeat("x", 501))},
+			service.KindInvalid,
+			"too long",
+		},
+		{
+			"blank category",
+			service.RecipeFields{Name: str("X"), Categories: &[]string{" "}},
+			service.KindInvalid,
+			"blank",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -240,7 +274,10 @@ func TestCreateRecipeRejectsBeforeAnyRequest(t *testing.T) {
 
 func TestCreateRecipeUnknownCategory(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
-	_, err := st.Service.CreateRecipe(context.Background(), service.RecipeFields{Name: str("X"), Categories: &[]string{"Soups", "Brunchy"}})
+	_, err := st.Service.CreateRecipe(
+		context.Background(),
+		service.RecipeFields{Name: str("X"), Categories: &[]string{"Soups", "Brunchy"}},
+	)
 	if kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"Brunchy"`) {
 		t.Fatalf("error = %v", err)
 	}
@@ -264,14 +301,23 @@ func TestUpdateRecipeRereadsAndKeepsEverything(t *testing.T) {
 	st.Fake.SeedRecipe(live)
 	before, _ := st.Fake.StoredRecipe("R1")
 
-	res, err := st.Service.UpdateRecipe(ctx, "R1", service.RecipeFields{Rating: new(4), Categories: &[]string{"Soups", "Dinner"}}, "")
+	res, err := st.Service.UpdateRecipe(
+		ctx,
+		"R1",
+		service.RecipeFields{Rating: new(4), Categories: &[]string{"Soups", "Dinner"}},
+		"",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(res.Changed, []string{"rating", "categories"}) {
 		t.Errorf("changed = %v", res.Changed)
 	}
-	if first, post := firstIndex(st.Fake, "GET", recipePostPath("R1")), firstIndex(st.Fake, "POST", recipePostPath("R1")); first < 0 || first > post {
+	if first, post := firstIndex(
+		st.Fake,
+		"GET",
+		recipePostPath("R1"),
+	), firstIndex(st.Fake, "POST", recipePostPath("R1")); first < 0 || first > post {
 		t.Errorf("the recipe was not read (%d) before it was written (%d)", first, post)
 	}
 	body := objectBody(t, onlyPost(t, st.Fake, recipePostPath("R1")))
@@ -311,15 +357,30 @@ func TestUpdateRecipeOnlyGivenFieldsAndNoChange(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
 	ctx := context.Background()
 
-	if _, err := st.Service.UpdateRecipe(ctx, "R1", service.RecipeFields{}, ""); kind(t, err) != service.KindInvalid {
+	if _, err := st.Service.UpdateRecipe(
+		ctx,
+		"R1",
+		service.RecipeFields{},
+		"",
+	); kind(t, err) != service.KindInvalid {
 		t.Errorf("an empty update: %v", err)
 	}
-	if _, err := st.Service.UpdateRecipe(ctx, "NOPE", service.RecipeFields{Rating: new(1)}, ""); kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"NOPE"`) {
+	if _, err := st.Service.UpdateRecipe(
+		ctx,
+		"NOPE",
+		service.RecipeFields{Rating: new(1)},
+		"",
+	); kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"NOPE"`) {
 		t.Errorf("unknown recipe: %v", err)
 	}
 	st.Fake.ResetRequests()
 
-	res, err := st.Service.UpdateRecipe(ctx, "R1", service.RecipeFields{Name: str("Tomato Soup"), Rating: new(0)}, "")
+	res, err := st.Service.UpdateRecipe(
+		ctx,
+		"R1",
+		service.RecipeFields{Name: str("Tomato Soup"), Rating: new(0)},
+		"",
+	)
 	if err != nil || !res.NoChange || len(res.Changed) != 0 {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
@@ -327,11 +388,19 @@ func TestUpdateRecipeOnlyGivenFieldsAndNoChange(t *testing.T) {
 		t.Error("an update that changes nothing was sent")
 	}
 
-	res, err = st.Service.UpdateRecipe(ctx, "R1", service.RecipeFields{Directions: str("Stir.\r\nServe.")}, "")
+	res, err = st.Service.UpdateRecipe(
+		ctx,
+		"R1",
+		service.RecipeFields{Directions: str("Stir.\r\nServe.")},
+		"",
+	)
 	if err != nil || !reflect.DeepEqual(res.Changed, []string{"directions"}) {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
-	if got := objectBody(t, onlyPost(t, st.Fake, recipePostPath("R1")))["directions"]; got != "Stir.\nServe." {
+	if got := objectBody(
+		t,
+		onlyPost(t, st.Fake, recipePostPath("R1")),
+	)["directions"]; got != "Stir.\nServe." {
 		t.Errorf("directions = %q", got)
 	}
 }
@@ -349,19 +418,40 @@ func TestUpdateRecipeExpectedHash(t *testing.T) {
 	if writes(st.Fake) != 0 {
 		t.Error("a conflicting update was written")
 	}
-	if _, err := st.Service.UpdateRecipe(ctx, "R1", service.RecipeFields{Rating: new(5)}, hash); err != nil {
+	if _, err := st.Service.UpdateRecipe(
+		ctx,
+		"R1",
+		service.RecipeFields{Rating: new(5)},
+		hash,
+	); err != nil {
 		t.Fatalf("matching hash: %v", err)
 	}
 	// The hash changed, so the same expected_hash now conflicts.
-	if _, err := st.Service.UpdateRecipe(ctx, "R1", service.RecipeFields{Rating: new(2)}, hash); kind(t, err) != service.KindConflict {
+	if _, err := st.Service.UpdateRecipe(
+		ctx,
+		"R1",
+		service.RecipeFields{Rating: new(2)},
+		hash,
+	); kind(t, err) != service.KindConflict {
 		t.Fatalf("second update: %v", err)
 	}
 }
 
 func TestUpdateRecipeUnknownCategory(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
-	_, err := st.Service.UpdateRecipe(context.Background(), "R1", service.RecipeFields{Categories: &[]string{"Nonexistent"}}, "")
-	if kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"Nonexistent"`) || writes(st.Fake) != 0 {
+	_, err := st.Service.UpdateRecipe(
+		context.Background(),
+		"R1",
+		service.RecipeFields{Categories: &[]string{"Nonexistent"}},
+		"",
+	)
+	if kind(
+		t,
+		err,
+	) != service.KindNotFound || !strings.Contains(
+		err.Error(),
+		`"Nonexistent"`,
+	) || writes(st.Fake) != 0 {
 		t.Fatalf("error = %v, writes = %d", err, writes(st.Fake))
 	}
 }
@@ -377,20 +467,31 @@ func TestTrashAndRestoreRecipe(t *testing.T) {
 	}
 	body := objectBody(t, onlyPost(t, st.Fake, recipePostPath("R1")))
 	if body["in_trash"] != true || body["hash"] == before["hash"] || body["deleted"] != false {
-		t.Errorf("body = trash %v hash %v deleted %v", body["in_trash"], body["hash"], body["deleted"])
+		t.Errorf(
+			"body = trash %v hash %v deleted %v",
+			body["in_trash"],
+			body["hash"],
+			body["deleted"],
+		)
 	}
 	page, _ := st.Service.SearchRecipes(ctx, service.SearchParams{Query: "tomato"})
 	if len(page.Items) != 0 {
 		t.Error("a trashed recipe is still in the default search")
 	}
-	page, _ = st.Service.SearchRecipes(ctx, service.SearchParams{Query: "tomato", IncludeTrashed: true})
+	page, _ = st.Service.SearchRecipes(
+		ctx,
+		service.SearchParams{Query: "tomato", IncludeTrashed: true},
+	)
 	if len(page.Items) != 1 || !page.Items[0].InTrash {
 		t.Errorf("trashed search = %+v", page.Items)
 	}
 
 	// Trashing again changes nothing.
 	st.Fake.ResetRequests()
-	if res, err := st.Service.TrashRecipe(ctx, "R1"); err != nil || !res.NoChange || writes(st.Fake) != 0 {
+	if res, err := st.Service.TrashRecipe(
+		ctx,
+		"R1",
+	); err != nil || !res.NoChange || writes(st.Fake) != 0 {
 		t.Fatalf("second trash = %+v, %v, writes %d", res, err, writes(st.Fake))
 	}
 
@@ -409,11 +510,23 @@ func TestTrashAndRestoreRecipe(t *testing.T) {
 func TestWriteLockSerializesWrites(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
 	// Widen the window between each write's read and its POST.
-	st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: recipePostPath("R1"), Times: -1, Kind: fakepaprika.FaultDelay, Delay: 15 * time.Millisecond})
+	st.Fake.Inject(fakepaprika.Fault{
+		Method: "GET",
+		Path:   recipePostPath("R1"),
+		Times:  -1,
+		Kind:   fakepaprika.FaultDelay,
+		Delay:  15 * time.Millisecond,
+	})
 
 	updates := []service.RecipeFields{
-		{Description: str("d")}, {Notes: str("n")}, {Servings: str("s")}, {PrepTime: str("p")},
-		{CookTime: str("c")}, {TotalTime: str("t")}, {Difficulty: str("f")}, {Source: str("o")},
+		{Description: str("d")},
+		{Notes: str("n")},
+		{Servings: str("s")},
+		{PrepTime: str("p")},
+		{CookTime: str("c")},
+		{TotalTime: str("t")},
+		{Difficulty: str("f")},
+		{Source: str("o")},
 	}
 	var wg sync.WaitGroup
 	errs := make([]error, len(updates))
@@ -431,8 +544,16 @@ func TestWriteLockSerializesWrites(t *testing.T) {
 		}
 	}
 	stored, _ := st.Fake.StoredRecipe("R1")
-	for k, want := range map[string]string{"description": "d", "notes": "n", "servings": "s", "prep_time": "p",
-		"cook_time": "c", "total_time": "t", "difficulty": "f", "source": "o"} {
+	for k, want := range map[string]string{
+		"description": "d",
+		"notes":       "n",
+		"servings":    "s",
+		"prep_time":   "p",
+		"cook_time":   "c",
+		"total_time":  "t",
+		"difficulty":  "f",
+		"source":      "o",
+	} {
 		if stored[k] != want {
 			t.Errorf("%s = %v, want %q: a concurrent write overwrote another", k, stored[k], want)
 		}
@@ -440,11 +561,29 @@ func TestWriteLockSerializesWrites(t *testing.T) {
 }
 
 func TestPostTimeoutIsUnknownOutcomeWithoutRetry(t *testing.T) {
-	st, logs := writeStack(t, nil, func(c *paprikaclient.Config) { c.RequestTimeout = 150 * time.Millisecond })
-	st.Fake.Inject(fakepaprika.Fault{Method: "POST", Path: recipePostPath("R1"), Times: -1, Kind: fakepaprika.FaultDelay, Delay: 2 * time.Second})
+	st, logs := writeStack(
+		t,
+		nil,
+		func(c *paprikaclient.Config) { c.RequestTimeout = 150 * time.Millisecond },
+	)
+	st.Fake.Inject(fakepaprika.Fault{
+		Method: "POST",
+		Path:   recipePostPath("R1"),
+		Times:  -1,
+		Kind:   fakepaprika.FaultDelay,
+		Delay:  2 * time.Second,
+	})
 
-	_, err := st.Service.UpdateRecipe(context.Background(), "R1", service.RecipeFields{Rating: new(5)}, "")
-	if kind(t, err) != service.KindOutcomeUnknown || !strings.Contains(err.Error(), "may or may not") {
+	_, err := st.Service.UpdateRecipe(
+		context.Background(),
+		"R1",
+		service.RecipeFields{Rating: new(5)},
+		"",
+	)
+	if kind(
+		t,
+		err,
+	) != service.KindOutcomeUnknown || !strings.Contains(err.Error(), "may or may not") {
 		t.Fatalf("error = %v", err)
 	}
 	if n := len(st.Fake.RequestsTo("POST", recipePostPath("R1"))); n != 1 {
@@ -460,7 +599,13 @@ func TestPostTimeoutIsUnknownOutcomeWithoutRetry(t *testing.T) {
 
 func TestCallerDeadlineDuringPostIsUnknownOutcome(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
-	st.Fake.Inject(fakepaprika.Fault{Method: "POST", Path: recipePostPath("R1"), Times: -1, Kind: fakepaprika.FaultDelay, Delay: 2 * time.Second})
+	st.Fake.Inject(fakepaprika.Fault{
+		Method: "POST",
+		Path:   recipePostPath("R1"),
+		Times:  -1,
+		Kind:   fakepaprika.FaultDelay,
+		Delay:  2 * time.Second,
+	})
 
 	// The caller's deadline, not the client's own timeout, ends the POST.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -476,7 +621,13 @@ func TestCallerDeadlineDuringPostIsUnknownOutcome(t *testing.T) {
 
 func TestCallerDeadlineBeforePostIsTemporaryNotUnknown(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
-	st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: recipePostPath("R1"), Times: -1, Kind: fakepaprika.FaultDelay, Delay: 2 * time.Second})
+	st.Fake.Inject(fakepaprika.Fault{
+		Method: "GET",
+		Path:   recipePostPath("R1"),
+		Times:  -1,
+		Kind:   fakepaprika.FaultDelay,
+		Delay:  2 * time.Second,
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -490,11 +641,22 @@ func TestCallerDeadlineBeforePostIsTemporaryNotUnknown(t *testing.T) {
 }
 
 func TestBatchTimeoutIsUnknownOutcomeForTheWholeBatch(t *testing.T) {
-	st, _ := writeStack(t, nil, func(c *paprikaclient.Config) { c.RequestTimeout = 150 * time.Millisecond })
-	st.Fake.Inject(fakepaprika.Fault{Method: "POST", Path: mealsPath, Times: -1, Kind: fakepaprika.FaultDelay, Delay: 2 * time.Second})
+	st, _ := writeStack(
+		t,
+		nil,
+		func(c *paprikaclient.Config) { c.RequestTimeout = 150 * time.Millisecond },
+	)
+	st.Fake.Inject(fakepaprika.Fault{
+		Method: "POST",
+		Path:   mealsPath,
+		Times:  -1,
+		Kind:   fakepaprika.FaultDelay,
+		Delay:  2 * time.Second,
+	})
 
 	_, err := st.Service.AddMeals(context.Background(), []service.MealInput{
-		{Date: "2030-04-01", MealType: "Dinner", Name: "A"}, {Date: "2030-04-02", MealType: "Dinner", Name: "B"},
+		{Date: "2030-04-01", MealType: "Dinner", Name: "A"},
+		{Date: "2030-04-02", MealType: "Dinner", Name: "B"},
 	})
 	if kind(t, err) != service.KindOutcomeUnknown {
 		t.Fatalf("error = %v", err)
@@ -506,9 +668,20 @@ func TestBatchTimeoutIsUnknownOutcomeForTheWholeBatch(t *testing.T) {
 
 func TestNotifyFailureIsSuccessWithWarning(t *testing.T) {
 	st, logs := writeStack(t, nil, nil)
-	st.Fake.Inject(fakepaprika.Fault{Method: "POST", Path: notifyPath, Kind: fakepaprika.FaultEnvelopeError, Code: 5, Message: "UPSTREAM-DETAIL"})
+	st.Fake.Inject(fakepaprika.Fault{
+		Method:  "POST",
+		Path:    notifyPath,
+		Kind:    fakepaprika.FaultEnvelopeError,
+		Code:    5,
+		Message: "UPSTREAM-DETAIL",
+	})
 
-	res, err := st.Service.UpdateRecipe(context.Background(), "R1", service.RecipeFields{Rating: new(3)}, "")
+	res, err := st.Service.UpdateRecipe(
+		context.Background(),
+		"R1",
+		service.RecipeFields{Rating: new(3)},
+		"",
+	)
 	if err != nil {
 		t.Fatalf("a notify failure failed the write: %v", err)
 	}
@@ -529,22 +702,49 @@ func TestNotifyFailureIsSuccessWithWarning(t *testing.T) {
 func TestAuditLogHasFieldNamesNeverValues(t *testing.T) {
 	st, logs := writeStack(t, nil, nil)
 	ctx := context.Background()
-	res, err := st.Service.CreateRecipe(ctx, service.RecipeFields{Name: str(secretName), Ingredients: str(secretBody), Notes: str(secretBody)})
+	res, err := st.Service.CreateRecipe(
+		ctx,
+		service.RecipeFields{
+			Name:        str(secretName),
+			Ingredients: str(secretBody),
+			Notes:       str(secretBody),
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Service.UpdateRecipe(ctx, res.Recipe.UID, service.RecipeFields{Directions: str(secretBody)}, "WRONG-HASH"); err == nil {
+	if _, err := st.Service.UpdateRecipe(
+		ctx,
+		res.Recipe.UID,
+		service.RecipeFields{Directions: str(secretBody)},
+		"WRONG-HASH",
+	); err == nil {
 		t.Fatal("expected a conflict")
 	}
-	if _, err := st.Service.UpdateRecipe(ctx, res.Recipe.UID, service.RecipeFields{Directions: str(secretBody)}, ""); err != nil {
+	if _, err := st.Service.UpdateRecipe(
+		ctx,
+		res.Recipe.UID,
+		service.RecipeFields{Directions: str(secretBody)},
+		"",
+	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Service.AddGroceryItems(ctx, "", []service.GroceryItemInput{{Text: secretBody}}); err != nil {
+	if _, err := st.Service.AddGroceryItems(
+		ctx,
+		"",
+		[]service.GroceryItemInput{{Text: secretBody}},
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	out := logs.String()
-	for _, secret := range []string{secretName, secretBody, st.Fake.Password(), st.Fake.LastToken(), st.Fake.Email()} {
+	for _, secret := range []string{
+		secretName,
+		secretBody,
+		st.Fake.Password(),
+		st.Fake.LastToken(),
+		st.Fake.Email(),
+	} {
 		if strings.Contains(out, secret) {
 			t.Errorf("log contains %q:\n%s", secret, out)
 		}
@@ -556,8 +756,17 @@ func TestAuditLogHasFieldNamesNeverValues(t *testing.T) {
 		}
 	}
 	joined := strings.Join(audits, "\n")
-	for _, want := range []string{"tool=create_recipe", "resource=recipe", "uid=" + res.Recipe.UID, "fields=name,ingredients,notes",
-		"fields=directions", "outcome=ok", "outcome=conflict", "tool=add_grocery_items", "resource=grocery_item"} {
+	for _, want := range []string{
+		"tool=create_recipe",
+		"resource=recipe",
+		"uid=" + res.Recipe.UID,
+		"fields=name,ingredients,notes",
+		"fields=directions",
+		"outcome=ok",
+		"outcome=conflict",
+		"tool=add_grocery_items",
+		"resource=grocery_item",
+	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("audit log lacks %q:\n%s", want, joined)
 		}
@@ -628,7 +837,10 @@ func TestAddMealsReportsItemFailuresAndWritesTheRest(t *testing.T) {
 	if err != nil || res.Added != 1 {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
-	if !strings.Contains(res.Items[0].Failure, `"Brunch"`) || !strings.Contains(res.Items[0].Failure, "Breakfast, Dinner") {
+	if !strings.Contains(
+		res.Items[0].Failure,
+		`"Brunch"`,
+	) || !strings.Contains(res.Items[0].Failure, "Breakfast, Dinner") {
 		t.Errorf("unknown type failure = %q", res.Items[0].Failure)
 	}
 	if res.Items[1].Failure != "" || res.Items[1].Meal.UID == "" {
@@ -637,13 +849,22 @@ func TestAddMealsReportsItemFailuresAndWritesTheRest(t *testing.T) {
 	if !strings.Contains(res.Items[2].Failure, `"NOPE"`) {
 		t.Errorf("unknown recipe failure = %q", res.Items[2].Failure)
 	}
-	if got := arrayBody(t, onlyPost(t, st.Fake, mealsPath)); len(got) != 1 || got[0]["name"] != "B" {
+	if got := arrayBody(
+		t,
+		onlyPost(t, st.Fake, mealsPath),
+	); len(got) != 1 || got[0]["name"] != "B" {
 		t.Errorf("posted = %v", got)
 	}
 
 	st.Fake.ResetRequests()
-	_, err = st.Service.AddMeals(context.Background(), []service.MealInput{{Date: "2030-04-01", MealType: "Brunch", Name: "A"}})
-	if kind(t, err) != service.KindInvalid || !strings.Contains(err.Error(), `"Brunch"`) || writes(st.Fake) != 0 {
+	_, err = st.Service.AddMeals(
+		context.Background(),
+		[]service.MealInput{{Date: "2030-04-01", MealType: "Brunch", Name: "A"}},
+	)
+	if kind(
+		t,
+		err,
+	) != service.KindInvalid || !strings.Contains(err.Error(), `"Brunch"`) || writes(st.Fake) != 0 {
 		t.Fatalf("all-failing batch: %v, writes %d", err, writes(st.Fake))
 	}
 }
@@ -660,10 +881,18 @@ func TestAddMealsValidatesInputFirst(t *testing.T) {
 	}{
 		{"none", nil, "at least one"},
 		{"51 is over the limit", many, "at most 50"},
-		{"bad date", []service.MealInput{{Date: "2030-13-40", MealType: "Dinner", Name: "x"}}, "YYYY-MM-DD"},
+		{
+			"bad date",
+			[]service.MealInput{{Date: "2030-13-40", MealType: "Dinner", Name: "x"}},
+			"YYYY-MM-DD",
+		},
 		{"missing date", []service.MealInput{{MealType: "Dinner", Name: "x"}}, "YYYY-MM-DD"},
 		{"missing type", []service.MealInput{{Date: "2030-04-01", Name: "x"}}, "meal_type"},
-		{"no recipe or name", []service.MealInput{{Date: "2030-04-01", MealType: "Dinner"}}, "recipe_uid, a name"},
+		{
+			"no recipe or name",
+			[]service.MealInput{{Date: "2030-04-01", MealType: "Dinner"}},
+			"recipe_uid, a name",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -725,7 +954,12 @@ func TestAddMealsWhenTheAccountHasNoMealTypes(t *testing.T) {
 	for _, m := range list.Items {
 		got = append(got, m.Date+" "+m.MealType+" "+m.Name)
 	}
-	want := []string{"2030-05-01 Lunch Leftovers", "2030-05-01 Dinner Pizza", "2030-05-02 Lunch Sandwich", "2030-05-02 Snacks Nuts"}
+	want := []string{
+		"2030-05-01 Lunch Leftovers",
+		"2030-05-01 Dinner Pizza",
+		"2030-05-02 Lunch Sandwich",
+		"2030-05-02 Snacks Nuts",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("meals = %v, want %v", got, want)
 	}
@@ -773,7 +1007,13 @@ func TestMealTypeNamesFallBack(t *testing.T) {
 		for _, m := range list.Items {
 			got[m.Name] = m.MealType
 		}
-		want := map[string]string{"by uid": "Brunch", "by original": "Brunch", "by default": "Snacks", "unknown": "Unknown (type 9)", "dangling uid": "Breakfast"}
+		want := map[string]string{
+			"by uid":       "Brunch",
+			"by original":  "Brunch",
+			"by default":   "Snacks",
+			"unknown":      "Unknown (type 9)",
+			"dangling uid": "Breakfast",
+		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("types = %v, want %v", got, want)
 		}
@@ -781,14 +1021,27 @@ func TestMealTypeNamesFallBack(t *testing.T) {
 }
 
 func TestUpdateMeal(t *testing.T) {
-	st, _ := writeStack(t, func(f *fakepaprika.Server) {
-		m := fakepaprika.SampleMeal("M-X", "Old name", "2030-03-20 00:00:00", typeDinner)
-		m["future_meal_field"] = "keep me"
-		f.Seed("meals", m)
-	}, nil)
+	st, _ := writeStack(
+		t,
+		func(f *fakepaprika.Server) {
+			m := fakepaprika.SampleMeal("M-X", "Old name", "2030-03-20 00:00:00", typeDinner)
+			m["future_meal_field"] = "keep me"
+			f.Seed("meals", m)
+		},
+		nil,
+	)
 	ctx := context.Background()
 
-	res, err := st.Service.UpdateMeal(ctx, "M-X", service.MealChanges{Date: str("2030-03-21"), MealType: str("breakfast"), Name: str("New name"), RecipeUID: str("R1")})
+	res, err := st.Service.UpdateMeal(
+		ctx,
+		"M-X",
+		service.MealChanges{
+			Date:      str("2030-03-21"),
+			MealType:  str("breakfast"),
+			Name:      str("New name"),
+			RecipeUID: str("R1"),
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -811,11 +1064,19 @@ func TestUpdateMeal(t *testing.T) {
 	}
 
 	// Unlink, then repeat for no change.
-	if _, err := st.Service.UpdateMeal(ctx, "M-X", service.MealChanges{RecipeUID: str("")}); err != nil {
+	if _, err := st.Service.UpdateMeal(
+		ctx,
+		"M-X",
+		service.MealChanges{RecipeUID: str("")},
+	); err != nil {
 		t.Fatal(err)
 	}
 	st.Fake.ResetRequests()
-	again, err := st.Service.UpdateMeal(ctx, "M-X", service.MealChanges{RecipeUID: str(""), Date: str("2030-03-21")})
+	again, err := st.Service.UpdateMeal(
+		ctx,
+		"M-X",
+		service.MealChanges{RecipeUID: str(""), Date: str("2030-03-21")},
+	)
 	if err != nil || !again.NoChange || writes(st.Fake) != 0 {
 		t.Fatalf("repeat = %+v, %v, writes %d", again, err, writes(st.Fake))
 	}
@@ -830,10 +1091,34 @@ func TestUpdateMealRefusals(t *testing.T) {
 		text string
 	}{
 		{"no fields", "M-LINK", service.MealChanges{}, service.KindInvalid, "at least one"},
-		{"unknown meal", "NOPE", service.MealChanges{Name: str("x")}, service.KindNotFound, `"NOPE"`},
-		{"unknown type", "M-LINK", service.MealChanges{MealType: str("Brunch")}, service.KindNotFound, `"Brunch"`},
-		{"unknown recipe", "M-LINK", service.MealChanges{RecipeUID: str("NOPE")}, service.KindNotFound, `"NOPE"`},
-		{"bad date", "M-LINK", service.MealChanges{Date: str("tomorrow")}, service.KindInvalid, "YYYY-MM-DD"},
+		{
+			"unknown meal",
+			"NOPE",
+			service.MealChanges{Name: str("x")},
+			service.KindNotFound,
+			`"NOPE"`,
+		},
+		{
+			"unknown type",
+			"M-LINK",
+			service.MealChanges{MealType: str("Brunch")},
+			service.KindNotFound,
+			`"Brunch"`,
+		},
+		{
+			"unknown recipe",
+			"M-LINK",
+			service.MealChanges{RecipeUID: str("NOPE")},
+			service.KindNotFound,
+			`"NOPE"`,
+		},
+		{
+			"bad date",
+			"M-LINK",
+			service.MealChanges{Date: str("tomorrow")},
+			service.KindInvalid,
+			"YYYY-MM-DD",
+		},
 		{"blank name", "M-LINK", service.MealChanges{Name: str(" ")}, service.KindInvalid, "name"},
 	}
 	for _, tt := range tests {
@@ -855,7 +1140,11 @@ func TestUpdateMealOnAccountWithoutMealTypes(t *testing.T) {
 	st.Fake.ResetRequests()
 	ctx := context.Background()
 
-	res, err := st.Service.UpdateMeal(ctx, "LEGACY-MEAL-1", service.MealChanges{Date: str("2030-05-03")})
+	res, err := st.Service.UpdateMeal(
+		ctx,
+		"LEGACY-MEAL-1",
+		service.MealChanges{Date: str("2030-05-03")},
+	)
 	if err != nil || !reflect.DeepEqual(res.Changed, []string{"date"}) {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
@@ -872,7 +1161,11 @@ func TestUpdateMealOnAccountWithoutMealTypes(t *testing.T) {
 		t.Errorf("meal type = %q", res.Meal.MealType)
 	}
 
-	res, err = st.Service.UpdateMeal(ctx, "LEGACY-MEAL-1", service.MealChanges{MealType: str("DINNER")})
+	res, err = st.Service.UpdateMeal(
+		ctx,
+		"LEGACY-MEAL-1",
+		service.MealChanges{MealType: str("DINNER")},
+	)
 	if err != nil || !reflect.DeepEqual(res.Changed, []string{"type"}) {
 		t.Fatalf("retype = %+v, %v", res, err)
 	}
@@ -880,7 +1173,11 @@ func TestUpdateMealOnAccountWithoutMealTypes(t *testing.T) {
 	if last["type"] != float64(2) || last["type_uid"] != nil {
 		t.Errorf("retyped meal = %v", last)
 	}
-	if _, err := st.Service.UpdateMeal(ctx, "LEGACY-MEAL-1", service.MealChanges{MealType: str("Brunch")}); kind(t, err) != service.KindNotFound ||
+	if _, err := st.Service.UpdateMeal(
+		ctx,
+		"LEGACY-MEAL-1",
+		service.MealChanges{MealType: str("Brunch")},
+	); kind(t, err) != service.KindNotFound ||
 		!strings.Contains(err.Error(), "Breakfast, Lunch, Dinner, Snacks") {
 		t.Errorf("unknown name: %v", err)
 	}
@@ -932,7 +1229,13 @@ func TestAddGroceryItems(t *testing.T) {
 	res, err := st.Service.AddGroceryItems(ctx, "", []service.GroceryItemInput{
 		{Text: "2 carrots, diced", Aisle: "dairy"},
 		{Text: "Butter"},
-		{Text: "bananas", Quantity: "3", Instruction: "ripe", Ingredient: "banana", Aisle: "Produce"},
+		{
+			Text:        "bananas",
+			Quantity:    "3",
+			Instruction: "ripe",
+			Ingredient:  "banana",
+			Aisle:       "Produce",
+		},
 	})
 	if err != nil || res.Added != 3 || res.ListUID != listMain {
 		t.Fatalf("result = %+v, %v", res, err)
@@ -966,7 +1269,8 @@ func TestAddGroceryItems(t *testing.T) {
 
 func TestGroceryAisleResolutionOrder(t *testing.T) {
 	remember := func(f *fakepaprika.Server) {
-		f.Seed("groceryingredients",
+		f.Seed(
+			"groceryingredients",
 			map[string]any{"uid": "ING-1", "name": "Butter", "aisle_uid": "AISLE-2"},
 			map[string]any{"uid": "ING-2", "name": "ghost", "aisle_uid": "AISLE-GONE"},
 			map[string]any{"uid": "ING-3", "name": "nothing", "aisle_uid": nil},
@@ -979,21 +1283,73 @@ func TestGroceryAisleResolutionOrder(t *testing.T) {
 		wantAisle string
 		wantFail  string
 	}{
-		{"given name wins over the remembered aisle", remember, service.GroceryItemInput{Text: "butter", Aisle: "Produce"}, "AISLE-1", ""},
-		{"remembered ingredient", remember, service.GroceryItemInput{Text: "BUTTER"}, "AISLE-2", ""},
-		{"remembered by the ingredient field", remember, service.GroceryItemInput{Text: "a block of it", Ingredient: "butter"}, "AISLE-2", ""},
-		{"remembered aisle that no longer exists falls through", remember, service.GroceryItemInput{Text: "ghost"}, "AISLE-1", ""},
-		{"remembered without an aisle falls through", remember, service.GroceryItemInput{Text: "nothing"}, "AISLE-1", ""},
-		{"nothing matches: first aisle", nil, service.GroceryItemInput{Text: "mystery"}, "AISLE-1", ""},
-		{"nothing matches: a Miscellaneous aisle is preferred", func(f *fakepaprika.Server) {
-			f.Seed("groceryaisles", fakepaprika.SampleAisle("AISLE-MISC", "Miscellaneous"))
-		}, service.GroceryItemInput{Text: "mystery"}, "AISLE-MISC", ""},
-		{"an unknown given aisle is refused", nil, service.GroceryItemInput{Text: "mystery", Aisle: "Frozen"}, "", `"Frozen"`},
+		{
+			"given name wins over the remembered aisle",
+			remember,
+			service.GroceryItemInput{Text: "butter", Aisle: "Produce"},
+			"AISLE-1",
+			"",
+		},
+		{
+			"remembered ingredient",
+			remember,
+			service.GroceryItemInput{Text: "BUTTER"},
+			"AISLE-2",
+			"",
+		},
+		{
+			"remembered by the ingredient field",
+			remember,
+			service.GroceryItemInput{Text: "a block of it", Ingredient: "butter"},
+			"AISLE-2",
+			"",
+		},
+		{
+			"remembered aisle that no longer exists falls through",
+			remember,
+			service.GroceryItemInput{Text: "ghost"},
+			"AISLE-1",
+			"",
+		},
+		{
+			"remembered without an aisle falls through",
+			remember,
+			service.GroceryItemInput{Text: "nothing"},
+			"AISLE-1",
+			"",
+		},
+		{
+			"nothing matches: first aisle",
+			nil,
+			service.GroceryItemInput{Text: "mystery"},
+			"AISLE-1",
+			"",
+		},
+		{
+			"nothing matches: a Miscellaneous aisle is preferred",
+			func(f *fakepaprika.Server) {
+				f.Seed("groceryaisles", fakepaprika.SampleAisle("AISLE-MISC", "Miscellaneous"))
+			},
+			service.GroceryItemInput{Text: "mystery"},
+			"AISLE-MISC",
+			"",
+		},
+		{
+			"an unknown given aisle is refused",
+			nil,
+			service.GroceryItemInput{Text: "mystery", Aisle: "Frozen"},
+			"",
+			`"Frozen"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st, _ := writeStack(t, tt.extra, nil)
-			res, err := st.Service.AddGroceryItems(context.Background(), "", []service.GroceryItemInput{tt.in, {Text: "filler", Aisle: "Dairy"}})
+			res, err := st.Service.AddGroceryItems(
+				context.Background(),
+				"",
+				[]service.GroceryItemInput{tt.in, {Text: "filler", Aisle: "Dairy"}},
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1005,7 +1361,12 @@ func TestGroceryAisleResolutionOrder(t *testing.T) {
 			}
 			posted := arrayBody(t, onlyPost(t, st.Fake, itemsPath))[0]
 			if posted["aisle_uid"] != tt.wantAisle || posted["aisle_uid"] == "" || posted["aisle"] == "" {
-				t.Errorf("aisle = %v / %v, want %s", posted["aisle_uid"], posted["aisle"], tt.wantAisle)
+				t.Errorf(
+					"aisle = %v / %v, want %s",
+					posted["aisle_uid"],
+					posted["aisle"],
+					tt.wantAisle,
+				)
 			}
 		})
 	}
@@ -1015,8 +1376,18 @@ func TestGroceryAisleResolutionOrder(t *testing.T) {
 			f.Seed("grocerylists", fakepaprika.SampleGroceryList("L", "Groceries", true))
 		})
 		st.Fake.ResetRequests()
-		_, err := st.Service.AddGroceryItems(context.Background(), "", []service.GroceryItemInput{{Text: "x"}})
-		if kind(t, err) != service.KindInvalid || !strings.Contains(err.Error(), "no grocery aisles") || writes(st.Fake) != 0 {
+		_, err := st.Service.AddGroceryItems(
+			context.Background(),
+			"",
+			[]service.GroceryItemInput{{Text: "x"}},
+		)
+		if kind(
+			t,
+			err,
+		) != service.KindInvalid || !strings.Contains(
+			err.Error(),
+			"no grocery aisles",
+		) || writes(st.Fake) != 0 {
 			t.Fatalf("error = %v, writes %d", err, writes(st.Fake))
 		}
 	})
@@ -1025,7 +1396,11 @@ func TestGroceryAisleResolutionOrder(t *testing.T) {
 func TestAddGroceryItemsListChoice(t *testing.T) {
 	st, _ := writeStack(t, nil, nil)
 	ctx := context.Background()
-	res, err := st.Service.AddGroceryItems(ctx, "party", []service.GroceryItemInput{{Text: "cake", Aisle: "Dairy"}})
+	res, err := st.Service.AddGroceryItems(
+		ctx,
+		"party",
+		[]service.GroceryItemInput{{Text: "cake", Aisle: "Dairy"}},
+	)
 	if err != nil || res.ListUID != listParty {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
@@ -1035,7 +1410,10 @@ func TestAddGroceryItemsListChoice(t *testing.T) {
 
 	st.Fake.ResetRequests()
 	_, err = st.Service.AddGroceryItems(ctx, "Nope", []service.GroceryItemInput{{Text: "x"}})
-	if kind(t, err) != service.KindNotFound || !strings.Contains(err.Error(), `"Nope"`) || writes(st.Fake) != 0 {
+	if kind(
+		t,
+		err,
+	) != service.KindNotFound || !strings.Contains(err.Error(), `"Nope"`) || writes(st.Fake) != 0 {
 		t.Fatalf("unknown list: %v, writes %d", err, writes(st.Fake))
 	}
 }
@@ -1046,13 +1424,25 @@ func TestAddGroceryItemsBatchLimits(t *testing.T) {
 		items[i] = service.GroceryItemInput{Text: fmt.Sprintf("item %d", i), Aisle: "Dairy"}
 	}
 	st, _ := writeStack(t, nil, nil)
-	if _, err := st.Service.AddGroceryItems(context.Background(), "", items); kind(t, err) != service.KindInvalid || len(st.Fake.Requests()) != 0 {
+	if _, err := st.Service.AddGroceryItems(
+		context.Background(),
+		"",
+		items,
+	); kind(t, err) != service.KindInvalid || len(st.Fake.Requests()) != 0 {
 		t.Fatalf("51 items: %v, requests %d", err, len(st.Fake.Requests()))
 	}
-	if _, err := st.Service.AddGroceryItems(context.Background(), "", []service.GroceryItemInput{{Text: " "}}); kind(t, err) != service.KindInvalid || len(st.Fake.Requests()) != 0 {
+	if _, err := st.Service.AddGroceryItems(
+		context.Background(),
+		"",
+		[]service.GroceryItemInput{{Text: " "}},
+	); kind(t, err) != service.KindInvalid || len(st.Fake.Requests()) != 0 {
 		t.Fatalf("blank text: %v", err)
 	}
-	if res, err := st.Service.AddGroceryItems(context.Background(), "", items[:50]); err != nil || res.Added != 50 {
+	if res, err := st.Service.AddGroceryItems(
+		context.Background(),
+		"",
+		items[:50],
+	); err != nil || res.Added != 50 {
 		t.Fatalf("50 items: %+v, %v", res, err)
 	}
 	if got := arrayBody(t, onlyPost(t, st.Fake, itemsPath)); len(got) != 50 {
@@ -1061,19 +1451,34 @@ func TestAddGroceryItemsBatchLimits(t *testing.T) {
 }
 
 func TestUpdateGroceryItem(t *testing.T) {
-	st, _ := writeStack(t, func(f *fakepaprika.Server) {
-		g := fakepaprika.SampleGrocery("G-1", "carrots", listMain, "AISLE-1")
-		g["future_item_field"] = []any{"keep"}
-		g["quantity"] = "2"
-		f.Seed("groceries", g)
-	}, nil)
+	st, _ := writeStack(
+		t,
+		func(f *fakepaprika.Server) {
+			g := fakepaprika.SampleGrocery("G-1", "carrots", listMain, "AISLE-1")
+			g["future_item_field"] = []any{"keep"}
+			g["quantity"] = "2"
+			f.Seed("groceries", g)
+		},
+		nil,
+	)
 	ctx := context.Background()
 
-	res, err := st.Service.UpdateGroceryItem(ctx, "G-1", service.GroceryChanges{Name: str("baby carrots"), Aisle: str("dairy"), Purchased: new(true)})
+	res, err := st.Service.UpdateGroceryItem(
+		ctx,
+		"G-1",
+		service.GroceryChanges{
+			Name:      str("baby carrots"),
+			Aisle:     str("dairy"),
+			Purchased: new(true),
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(res.Changed, []string{"name", "ingredient", "aisle_uid", "aisle", "purchased"}) {
+	if !reflect.DeepEqual(
+		res.Changed,
+		[]string{"name", "ingredient", "aisle_uid", "aisle", "purchased"},
+	) {
 		t.Errorf("changed = %v", res.Changed)
 	}
 	g := arrayBody(t, onlyPost(t, st.Fake, itemsPath))[0]
@@ -1101,17 +1506,33 @@ func TestUpdateGroceryItem(t *testing.T) {
 	}
 
 	st.Fake.ResetRequests()
-	again, err := st.Service.UpdateGroceryItem(ctx, "G-1", service.GroceryChanges{Purchased: new(true)})
+	again, err := st.Service.UpdateGroceryItem(
+		ctx,
+		"G-1",
+		service.GroceryChanges{Purchased: new(true)},
+	)
 	if err != nil || !again.NoChange || writes(st.Fake) != 0 {
 		t.Fatalf("repeat = %+v, %v", again, err)
 	}
-	if _, err := st.Service.UpdateGroceryItem(ctx, "G-1", service.GroceryChanges{Aisle: str("Frozen")}); kind(t, err) != service.KindNotFound || writes(st.Fake) != 0 {
+	if _, err := st.Service.UpdateGroceryItem(
+		ctx,
+		"G-1",
+		service.GroceryChanges{Aisle: str("Frozen")},
+	); kind(t, err) != service.KindNotFound || writes(st.Fake) != 0 {
 		t.Errorf("unknown aisle: %v", err)
 	}
-	if _, err := st.Service.UpdateGroceryItem(ctx, "NOPE", service.GroceryChanges{Purchased: new(true)}); kind(t, err) != service.KindNotFound {
+	if _, err := st.Service.UpdateGroceryItem(
+		ctx,
+		"NOPE",
+		service.GroceryChanges{Purchased: new(true)},
+	); kind(t, err) != service.KindNotFound {
 		t.Errorf("unknown item: %v", err)
 	}
-	if _, err := st.Service.UpdateGroceryItem(ctx, "G-1", service.GroceryChanges{}); kind(t, err) != service.KindInvalid {
+	if _, err := st.Service.UpdateGroceryItem(
+		ctx,
+		"G-1",
+		service.GroceryChanges{},
+	); kind(t, err) != service.KindInvalid {
 		t.Errorf("no fields: %v", err)
 	}
 }
@@ -1126,7 +1547,10 @@ func TestDeleteGroceryItem(t *testing.T) {
 	if res.Before["name"] != "lettuce" || res.Before["list_uid"] != listMain {
 		t.Errorf("before = %v", res.Before)
 	}
-	if got := arrayBody(t, onlyPost(t, st.Fake, itemsPath))[0]; got["deleted"] != true || got["name"] != "lettuce" {
+	if got := arrayBody(
+		t,
+		onlyPost(t, st.Fake, itemsPath),
+	)[0]; got["deleted"] != true || got["name"] != "lettuce" {
 		t.Errorf("posted = %v", got)
 	}
 	if groceryByUID(st.Fake, "G-2") != nil {
@@ -1161,7 +1585,10 @@ func TestCreateAndDeleteGroceryList(t *testing.T) {
 	if lists.Total != 3 {
 		t.Errorf("lists = %+v", lists.Items)
 	}
-	if _, err := st.Service.CreateGroceryList(ctx, "mcp-test camping"); kind(t, err) != service.KindInvalid || !strings.Contains(err.Error(), "already exists") {
+	if _, err := st.Service.CreateGroceryList(
+		ctx,
+		"mcp-test camping",
+	); kind(t, err) != service.KindInvalid || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("duplicate: %v", err)
 	}
 	if _, err := st.Service.CreateGroceryList(ctx, ""); kind(t, err) != service.KindInvalid {
@@ -1176,7 +1603,10 @@ func TestCreateAndDeleteGroceryList(t *testing.T) {
 	}
 	for _, r := range refusals {
 		st.Fake.ResetRequests()
-		if _, err := st.Service.DeleteGroceryList(ctx, r.list); err == nil || !strings.Contains(err.Error(), r.text) || writes(st.Fake) != 0 {
+		if _, err := st.Service.DeleteGroceryList(
+			ctx,
+			r.list,
+		); err == nil || !strings.Contains(err.Error(), r.text) || writes(st.Fake) != 0 {
 			t.Errorf("%s: error = %v, writes %d", r.name, err, writes(st.Fake))
 		}
 	}
@@ -1192,7 +1622,10 @@ func TestCreateAndDeleteGroceryList(t *testing.T) {
 	if res.Before["name"] != "MCP-TEST Camping" {
 		t.Errorf("before = %v", res.Before)
 	}
-	if got := arrayBody(t, onlyPost(t, st.Fake, listsPath))[0]; got["deleted"] != true || got["uid"] != created.List.UID {
+	if got := arrayBody(
+		t,
+		onlyPost(t, st.Fake, listsPath),
+	)[0]; got["deleted"] != true || got["uid"] != created.List.UID {
 		t.Errorf("posted = %v", got)
 	}
 	lists, _ = st.Service.ListGroceryLists(ctx, 0, "")

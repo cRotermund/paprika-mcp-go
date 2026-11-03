@@ -85,7 +85,10 @@ func paginate[T any](all []T, limit int, cursor string) (Page[T], error) {
 	if cursor != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(cursor)
 		n, convErr := strconv.Atoi(strings.TrimPrefix(string(raw), cursorPrefix))
-		if err != nil || convErr != nil || !strings.HasPrefix(string(raw), cursorPrefix) || n < 0 || n > len(all) {
+		if err != nil || convErr != nil || !strings.HasPrefix(
+			string(raw),
+			cursorPrefix,
+		) || n < 0 || n > len(all) {
 			return Page[T]{}, invalid("The cursor is not valid. Repeat the call without a cursor.")
 		}
 		offset = n
@@ -140,7 +143,12 @@ func (s *Service) SearchRecipes(ctx context.Context, p SearchParams) (Page[Recip
 		return Page[RecipeSummary]{}, invalid("min_rating must be between 0 and 5.")
 	}
 
-	q := caching.Query{Text: p.Query, Favorite: p.Favorite, MinRating: p.MinRating, IncludeTrashed: p.IncludeTrashed}
+	q := caching.Query{
+		Text:           p.Query,
+		Favorite:       p.Favorite,
+		MinRating:      p.MinRating,
+		IncludeTrashed: p.IncludeTrashed,
+	}
 	cats, err := s.categoryNames(ctx)
 	if p.Category != "" {
 		if err != nil {
@@ -161,11 +169,21 @@ func (s *Service) SearchRecipes(ctx context.Context, p SearchParams) (Page[Recip
 	if err != nil {
 		return Page[RecipeSummary]{}, err
 	}
-	out := Page[RecipeSummary]{Total: page.Total, NextCursor: page.NextCursor, Items: make([]RecipeSummary, 0, len(page.Items))}
+	out := Page[RecipeSummary]{
+		Total:      page.Total,
+		NextCursor: page.NextCursor,
+		Items:      make([]RecipeSummary, 0, len(page.Items)),
+	}
 	for _, e := range page.Items {
 		out.Items = append(out.Items, RecipeSummary{
-			UID: e.UID, Name: e.Name, Categories: namesFor(e.Categories, cats), Rating: e.Rating,
-			Favorite: e.Favorite, InTrash: e.InTrash, Source: e.Source, TotalTime: e.TotalTime,
+			UID:        e.UID,
+			Name:       e.Name,
+			Categories: namesFor(e.Categories, cats),
+			Rating:     e.Rating,
+			Favorite:   e.Favorite,
+			InTrash:    e.InTrash,
+			Source:     e.Source,
+			TotalTime:  e.TotalTime,
 		})
 	}
 	return out, nil
@@ -204,7 +222,10 @@ func (s *Service) resolveCategory(ctx context.Context, ref string) (string, erro
 }
 
 // resolveCategoryIn finds a category by uid, then by case-insensitive name.
-func resolveCategoryIn(cats []paprikaclient.Entry[paprikaclient.Category], ref string) (string, error) {
+func resolveCategoryIn(
+	cats []paprikaclient.Entry[paprikaclient.Category],
+	ref string,
+) (string, error) {
 	for _, c := range cats {
 		if c.Value.UID == ref {
 			return c.Value.UID, nil
@@ -219,11 +240,17 @@ func resolveCategoryIn(cats []paprikaclient.Entry[paprikaclient.Category], ref s
 	}
 	switch len(matches) {
 	case 0:
-		return "", notFound("Unknown category %q. Call list_categories to see the valid names and uid values.", ref)
+		return "", notFound(
+			"Unknown category %q. Call list_categories to see the valid names and uid values.",
+			ref,
+		)
 	case 1:
 		return matches[0], nil
 	default:
-		return "", invalid("Several categories are named %q. Use the category uid from list_categories instead.", ref)
+		return "", invalid(
+			"Several categories are named %q. Use the category uid from list_categories instead.",
+			ref,
+		)
 	}
 }
 
@@ -268,7 +295,10 @@ func (s *Service) GetRecipe(ctx context.Context, uid string) (RecipeDetail, erro
 	entry, err := s.cache.Recipe(ctx, uid)
 	if err != nil {
 		if isNotFound(err) {
-			return RecipeDetail{}, notFound("No recipe has the uid %q. Use search_recipes to find a valid uid.", uid)
+			return RecipeDetail{}, notFound(
+				"No recipe has the uid %q. Use search_recipes to find a valid uid.",
+				uid,
+			)
 		}
 		return RecipeDetail{}, s.mapError("get_recipe", err)
 	}
@@ -286,11 +316,24 @@ func (s *Service) recipeDetail(ctx context.Context, r paprikaclient.Recipe) Reci
 		cats = append(cats, CategoryRef{UID: c, Name: names[c]})
 	}
 	return RecipeDetail{
-		UID: r.UID, Hash: r.Hash, Name: r.Name, Created: r.Created, Description: r.Description,
-		Ingredients: r.Ingredients, Directions: r.Directions, Notes: r.Notes, Source: r.Source,
-		SourceURL: r.SourceURL, Servings: r.Servings, PrepTime: r.PrepTime, CookTime: r.CookTime,
-		TotalTime: r.TotalTime, Rating: r.Rating, Favorite: r.OnFavorites, InTrash: r.InTrash,
-		Categories: cats,
+		UID:         r.UID,
+		Hash:        r.Hash,
+		Name:        r.Name,
+		Created:     r.Created,
+		Description: r.Description,
+		Ingredients: r.Ingredients,
+		Directions:  r.Directions,
+		Notes:       r.Notes,
+		Source:      r.Source,
+		SourceURL:   r.SourceURL,
+		Servings:    r.Servings,
+		PrepTime:    r.PrepTime,
+		CookTime:    r.CookTime,
+		TotalTime:   r.TotalTime,
+		Rating:      r.Rating,
+		Favorite:    r.OnFavorites,
+		InTrash:     r.InTrash,
+		Categories:  cats,
 	}
 }
 
@@ -312,7 +355,11 @@ type CategoryNode struct {
 
 // ListCategories returns the category tree flattened depth first: each
 // category follows its parent, siblings in display order.
-func (s *Service) ListCategories(ctx context.Context, limit int, cursor string) (Page[CategoryNode], error) {
+func (s *Service) ListCategories(
+	ctx context.Context,
+	limit int,
+	cursor string,
+) (Page[CategoryNode], error) {
 	cats, err := s.cache.Categories(ctx)
 	if err != nil {
 		return Page[CategoryNode]{}, s.mapError("list_categories", err)
@@ -349,7 +396,10 @@ func (s *Service) ListCategories(ctx context.Context, limit int, cursor string) 
 			if parentPath != "" {
 				path = parentPath + " > " + k.Name
 			}
-			all = append(all, CategoryNode{UID: k.UID, ParentUID: parent, Name: k.Name, Depth: depth, Path: path})
+			all = append(
+				all,
+				CategoryNode{UID: k.UID, ParentUID: parent, Name: k.Name, Depth: depth, Path: path},
+			)
 			walk(k.UID, path, depth+1)
 		}
 	}
@@ -370,7 +420,12 @@ type MealSummary struct {
 
 // ListMeals returns planned meals from start through end, inclusive. Both are
 // YYYY-MM-DD dates.
-func (s *Service) ListMeals(ctx context.Context, start, end string, limit int, cursor string) (Page[MealSummary], error) {
+func (s *Service) ListMeals(
+	ctx context.Context,
+	start, end string,
+	limit int,
+	cursor string,
+) (Page[MealSummary], error) {
 	from, err := parseDate("start_date", start)
 	if err != nil {
 		return Page[MealSummary]{}, err
@@ -383,7 +438,10 @@ func (s *Service) ListMeals(ctx context.Context, start, end string, limit int, c
 		return Page[MealSummary]{}, invalid("end_date must not be before start_date.")
 	}
 	if to.Sub(from) > (maxMealDays-1)*24*time.Hour {
-		return Page[MealSummary]{}, invalid("The date range is too long; ask for at most %d days at a time.", maxMealDays)
+		return Page[MealSummary]{}, invalid(
+			"The date range is too long; ask for at most %d days at a time.",
+			maxMealDays,
+		)
 	}
 
 	meals, err := s.cache.Meals(ctx)
@@ -451,7 +509,11 @@ type NamedRef struct {
 
 // ListMealTypes returns the account's meal types in display order. An account
 // with none gets the four built-in types, flagged Builtin and without a uid.
-func (s *Service) ListMealTypes(ctx context.Context, limit int, cursor string) (Page[MealTypeInfo], error) {
+func (s *Service) ListMealTypes(
+	ctx context.Context,
+	limit int,
+	cursor string,
+) (Page[MealTypeInfo], error) {
 	types, err := s.cache.MealTypes(ctx)
 	if err != nil {
 		return Page[MealTypeInfo]{}, s.mapError("list_meal_types", err)
@@ -469,7 +531,11 @@ type GroceryListSummary struct {
 }
 
 // ListGroceryLists returns the grocery lists with item counts.
-func (s *Service) ListGroceryLists(ctx context.Context, limit int, cursor string) (Page[GroceryListSummary], error) {
+func (s *Service) ListGroceryLists(
+	ctx context.Context,
+	limit int,
+	cursor string,
+) (Page[GroceryListSummary], error) {
 	lists, err := s.cache.GroceryLists(ctx)
 	if err != nil {
 		return Page[GroceryListSummary]{}, s.mapError("list_grocery_lists", err)
@@ -489,11 +555,19 @@ func (s *Service) ListGroceryLists(ctx context.Context, limit int, cursor string
 	for i, l := range lists {
 		vals[i] = l.Value
 	}
-	slices.SortStableFunc(vals, func(a, b paprikaclient.GroceryList) int { return a.OrderFlag - b.OrderFlag })
+	slices.SortStableFunc(
+		vals,
+		func(a, b paprikaclient.GroceryList) int { return a.OrderFlag - b.OrderFlag },
+	)
 	all := make([]GroceryListSummary, len(vals))
 	for i, l := range vals {
-		all[i] = GroceryListSummary{UID: l.UID, Name: l.Name, IsDefault: l.IsDefault,
-			ItemCount: total[l.UID], UnpurchasedCount: open[l.UID]}
+		all[i] = GroceryListSummary{
+			UID:              l.UID,
+			Name:             l.Name,
+			IsDefault:        l.IsDefault,
+			ItemCount:        total[l.UID],
+			UnpurchasedCount: open[l.UID],
+		}
 	}
 	return paginate(all, limit, cursor)
 }
@@ -517,7 +591,13 @@ type GroceryItemsPage struct {
 
 // ListGroceryItems returns the items of one list. List is a list uid or name;
 // empty selects the default list.
-func (s *Service) ListGroceryItems(ctx context.Context, list string, includePurchased bool, limit int, cursor string) (GroceryItemsPage, error) {
+func (s *Service) ListGroceryItems(
+	ctx context.Context,
+	list string,
+	includePurchased bool,
+	limit int,
+	cursor string,
+) (GroceryItemsPage, error) {
 	if err := checkText("list", list, maxRefLen); err != nil {
 		return GroceryItemsPage{}, err
 	}
@@ -566,8 +646,14 @@ func (s *Service) ListGroceryItems(ctx context.Context, list string, includePurc
 	})
 	all := make([]GroceryItemSummary, len(vals))
 	for i, g := range vals {
-		all[i] = GroceryItemSummary{UID: g.UID, Name: g.Name, Quantity: g.Quantity,
-			Instruction: g.Instruction, Aisle: aisleOf(g), Purchased: g.Purchased}
+		all[i] = GroceryItemSummary{
+			UID:         g.UID,
+			Name:        g.Name,
+			Quantity:    g.Quantity,
+			Instruction: g.Instruction,
+			Aisle:       aisleOf(g),
+			Purchased:   g.Purchased,
+		}
 	}
 	page, err := paginate(all, limit, cursor)
 	if err != nil {
@@ -578,7 +664,10 @@ func (s *Service) ListGroceryItems(ctx context.Context, list string, includePurc
 
 // pickList finds a list by uid, then by case-insensitive name. An empty ref
 // selects the default list.
-func pickList(lists []paprikaclient.Entry[paprikaclient.GroceryList], ref string) (paprikaclient.GroceryList, error) {
+func pickList(
+	lists []paprikaclient.Entry[paprikaclient.GroceryList],
+	ref string,
+) (paprikaclient.GroceryList, error) {
 	ref = strings.TrimSpace(ref)
 	if len(lists) == 0 {
 		return paprikaclient.GroceryList{}, notFound("There are no grocery lists.")
@@ -604,16 +693,26 @@ func pickList(lists []paprikaclient.Entry[paprikaclient.GroceryList], ref string
 	}
 	switch len(found) {
 	case 0:
-		return paprikaclient.GroceryList{}, notFound("Unknown grocery list %q. Call list_grocery_lists to see the valid names and uid values.", ref)
+		return paprikaclient.GroceryList{}, notFound(
+			"Unknown grocery list %q. Call list_grocery_lists to see the valid names and uid values.",
+			ref,
+		)
 	case 1:
 		return found[0], nil
 	default:
-		return paprikaclient.GroceryList{}, invalid("Several grocery lists are named %q. Use the list uid from list_grocery_lists instead.", ref)
+		return paprikaclient.GroceryList{}, invalid(
+			"Several grocery lists are named %q. Use the list uid from list_grocery_lists instead.",
+			ref,
+		)
 	}
 }
 
 // ListGroceryAisles returns the store aisles in display order.
-func (s *Service) ListGroceryAisles(ctx context.Context, limit int, cursor string) (Page[NamedRef], error) {
+func (s *Service) ListGroceryAisles(
+	ctx context.Context,
+	limit int,
+	cursor string,
+) (Page[NamedRef], error) {
 	aisles, err := s.cache.GroceryAisles(ctx)
 	if err != nil {
 		return Page[NamedRef]{}, s.mapError("list_grocery_aisles", err)
@@ -622,7 +721,10 @@ func (s *Service) ListGroceryAisles(ctx context.Context, limit int, cursor strin
 	for i, a := range aisles {
 		vals[i] = a.Value
 	}
-	slices.SortStableFunc(vals, func(a, b paprikaclient.GroceryAisle) int { return a.OrderFlag - b.OrderFlag })
+	slices.SortStableFunc(
+		vals,
+		func(a, b paprikaclient.GroceryAisle) int { return a.OrderFlag - b.OrderFlag },
+	)
 	all := make([]NamedRef, len(vals))
 	for i, v := range vals {
 		all[i] = NamedRef{UID: v.UID, Name: v.Name}

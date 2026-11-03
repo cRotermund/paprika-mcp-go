@@ -179,7 +179,11 @@ func (c *Client) write(ctx context.Context, path string, payload any) error {
 
 func expectTrue(raw json.RawMessage) error {
 	if !bytes.Equal(bytes.TrimSpace(raw), []byte("true")) {
-		return fmt.Errorf("%w: write was not confirmed: %w", ErrUnexpectedResponse, ErrOutcomeUnknown)
+		return fmt.Errorf(
+			"%w: write was not confirmed: %w",
+			ErrUnexpectedResponse,
+			ErrOutcomeUnknown,
+		)
 	}
 	return nil
 }

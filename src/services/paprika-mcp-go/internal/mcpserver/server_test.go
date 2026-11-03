@@ -22,7 +22,8 @@ import (
 const secretText = "RECIPE-SECRET-TEXT-9d1f"
 
 func seed(f *fakepaprika.Server) {
-	f.Seed("categories",
+	f.Seed(
+		"categories",
 		fakepaprika.SampleCategory("CAT-DINNER", "Dinner"),
 		fakepaprika.SampleCategory("CAT-SOUP", "Soups"),
 	)
@@ -36,12 +37,21 @@ func seed(f *fakepaprika.Server) {
 	trashed["in_trash"] = true
 	f.SeedRecipe(trashed)
 	for i := range 5 {
-		f.SeedRecipe(testsupport.Recipe(fmt.Sprintf("P%d", i), fmt.Sprintf("Pasta %d", i), "pasta", "CAT-DINNER"))
+		f.SeedRecipe(testsupport.Recipe(
+			fmt.Sprintf("P%d", i),
+			fmt.Sprintf("Pasta %d", i),
+			"pasta",
+			"CAT-DINNER",
+		))
 	}
 	f.Seed("mealtypes", fakepaprika.SampleMealType("MT-D", "Dinner", 2))
 	meal := fakepaprika.SampleMeal("M1", "Soup night", "2030-03-10 00:00:00", "MT-D")
 	meal["recipe_uid"] = "R1"
-	f.Seed("meals", meal, fakepaprika.SampleMeal("M2", "Out of range", "2031-01-01 00:00:00", "MT-D"))
+	f.Seed(
+		"meals",
+		meal,
+		fakepaprika.SampleMeal("M2", "Out of range", "2031-01-01 00:00:00", "MT-D"),
+	)
 	f.Seed("groceryaisles", fakepaprika.SampleAisle("AISLE-1", "Produce"))
 	f.Seed("grocerylists", fakepaprika.SampleGroceryList("LIST-1", "Groceries", true))
 	done := fakepaprika.SampleGrocery("G2", "bread", "LIST-1", "AISLE-1")
@@ -75,7 +85,13 @@ func newSession(t *testing.T) (*mcp.ClientSession, *testsupport.Stack) {
 }
 
 // call invokes a tool and decodes its structured result into out (if not nil).
-func call(t *testing.T, s *mcp.ClientSession, name string, args map[string]any, out any) *mcp.CallToolResult {
+func call(
+	t *testing.T,
+	s *mcp.ClientSession,
+	name string,
+	args map[string]any,
+	out any,
+) *mcp.CallToolResult {
 	t.Helper()
 	res, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
@@ -116,8 +132,17 @@ func TestToolsAreReadOnlyAndTyped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"ping", "search_recipes", "get_recipe", "list_categories", "list_meals", "list_meal_types",
-		"list_grocery_lists", "list_grocery_items", "list_grocery_aisles"}
+	want := []string{
+		"ping",
+		"search_recipes",
+		"get_recipe",
+		"list_categories",
+		"list_meals",
+		"list_meal_types",
+		"list_grocery_lists",
+		"list_grocery_items",
+		"list_grocery_aisles",
+	}
 	got := map[string]*mcp.Tool{}
 	for _, tool := range res.Tools {
 		got[tool.Name] = tool
@@ -167,8 +192,16 @@ func TestSearchRecipesTool(t *testing.T) {
 	}{
 		{"by query", map[string]any{"query": "tomato"}, []string{"R1"}},
 		{"trashed hidden", map[string]any{"query": "soup"}, []string{"R1"}},
-		{"trashed included", map[string]any{"query": "soup", "include_trashed": true}, []string{"R2", "R1"}},
-		{"category by name", map[string]any{"category": "dinner", "limit": 2}, []string{"P0", "P1"}},
+		{
+			"trashed included",
+			map[string]any{"query": "soup", "include_trashed": true},
+			[]string{"R2", "R1"},
+		},
+		{
+			"category by name",
+			map[string]any{"category": "dinner", "limit": 2},
+			[]string{"P0", "P1"},
+		},
 		{"favorite", map[string]any{"favorite": true}, []string{"R1"}},
 		{"min rating", map[string]any{"min_rating": 5}, []string{"R1"}},
 	}
@@ -194,7 +227,10 @@ func TestSearchRecipesTool(t *testing.T) {
 	if r := out.Recipes[0]; r.Name != "Tomato Soup" || len(r.Categories) != 1 || r.Categories[0] != "Soups" || r.Rating != 5 || !r.Favorite {
 		t.Errorf("summary = %+v", r)
 	}
-	if strings.Contains(text(call(t, s, "search_recipes", map[string]any{"query": "tomato"}, nil)), secretText) {
+	if strings.Contains(
+		text(call(t, s, "search_recipes", map[string]any{"query": "tomato"}, nil)),
+		secretText,
+	) {
 		t.Error("search summaries must not carry recipe bodies")
 	}
 }
@@ -252,13 +288,19 @@ func TestGetRecipeTool(t *testing.T) {
 	if res.IsError {
 		t.Fatal(text(res))
 	}
-	if out.Name != "Tomato Soup" || len(out.Hash) != 64 || !strings.Contains(out.Directions, "Simmer.") ||
+	if out.Name != "Tomato Soup" || len(out.Hash) != 64 || !strings.Contains(
+		out.Directions,
+		"Simmer.",
+	) ||
 		out.Ingredients != "tomatoes\ncream" || len(out.Categories) != 1 || out.Categories[0].Name != "Soups" {
 		t.Errorf("recipe = %+v", out)
 	}
 
 	res = call(t, s, "get_recipe", map[string]any{"uid": "NOPE"}, nil)
-	if !res.IsError || !strings.Contains(text(res), `"NOPE"`) || !strings.Contains(text(res), "search_recipes") {
+	if !res.IsError || !strings.Contains(
+		text(res),
+		`"NOPE"`,
+	) || !strings.Contains(text(res), "search_recipes") {
 		t.Errorf("unknown uid result = %v %q", res.IsError, text(res))
 	}
 }
@@ -291,7 +333,13 @@ func TestListMealsTool(t *testing.T) {
 			RecipeName string `json:"recipe_name"`
 		} `json:"meals"`
 	}
-	res := call(t, s, "list_meals", map[string]any{"start_date": "2030-03-01", "end_date": "2030-03-31"}, &out)
+	res := call(
+		t,
+		s,
+		"list_meals",
+		map[string]any{"start_date": "2030-03-01", "end_date": "2030-03-31"},
+		&out,
+	)
 	if res.IsError {
 		t.Fatal(text(res))
 	}
@@ -368,7 +416,13 @@ func TestGroceryTools(t *testing.T) {
 		t.Errorf("default items = %+v", def)
 	}
 	var all items
-	call(t, s, "list_grocery_items", map[string]any{"list": "LIST-1", "include_purchased": true}, &all)
+	call(
+		t,
+		s,
+		"list_grocery_items",
+		map[string]any{"list": "LIST-1", "include_purchased": true},
+		&all,
+	)
 	if len(all.Items) != 2 {
 		t.Errorf("with purchased = %+v", all.Items)
 	}
@@ -400,8 +454,11 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 		banned   []string
 	}{
 		{
-			name:     "login failing",
-			prepare:  func(st *testsupport.Stack) { st.Fake.SetPassword("other"); st.Fake.RevokeTokens() },
+			name: "login failing",
+			prepare: func(st *testsupport.Stack) {
+				st.Fake.SetPassword("other")
+				st.Fake.RevokeTokens()
+			},
 			tool:     "list_meal_types",
 			wantText: "server configuration problem",
 			banned:   []string{"other", "cook@example.test"},
@@ -409,7 +466,12 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 		{
 			name: "paprika down",
 			prepare: func(st *testsupport.Stack) {
-				st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: "/api/v2/sync/mealtypes/", Times: -1, Kind: fakepaprika.FaultUnavailable})
+				st.Fake.Inject(fakepaprika.Fault{
+					Method: "GET",
+					Path:   "/api/v2/sync/mealtypes/",
+					Times:  -1,
+					Kind:   fakepaprika.FaultUnavailable,
+				})
 			},
 			tool:     "list_meal_types",
 			wantText: "Retry later",
@@ -417,8 +479,14 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 		{
 			name: "upstream message is hidden",
 			prepare: func(st *testsupport.Stack) {
-				st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: "/api/v2/sync/grocerylists/", Times: -1,
-					Kind: fakepaprika.FaultEnvelopeError, Code: 5, Message: "UPSTREAM-INTERNAL-TEXT"})
+				st.Fake.Inject(fakepaprika.Fault{
+					Method:  "GET",
+					Path:    "/api/v2/sync/grocerylists/",
+					Times:   -1,
+					Kind:    fakepaprika.FaultEnvelopeError,
+					Code:    5,
+					Message: "UPSTREAM-INTERNAL-TEXT",
+				})
 			},
 			tool:     "list_grocery_lists",
 			wantText: "unusable response",
@@ -452,7 +520,10 @@ func TestStillLoadingIsRetryableToolError(t *testing.T) {
 	s := connect(t, service.New(cache, nil), mcpserver.Options{})
 
 	res := call(t, s, "search_recipes", map[string]any{"query": "soup"}, nil)
-	if !res.IsError || !strings.Contains(text(res), "still loading") || !strings.Contains(text(res), "Retry") {
+	if !res.IsError || !strings.Contains(
+		text(res),
+		"still loading",
+	) || !strings.Contains(text(res), "Retry") {
 		t.Errorf("result = %v %q", res.IsError, text(res))
 	}
 	if res := call(t, s, "get_recipe", map[string]any{"uid": "R1"}, nil); res.IsError {
@@ -513,7 +584,14 @@ func TestLogsNeverContainRecipeTextOrPassword(t *testing.T) {
 	if out == "" {
 		t.Fatal("no logs were captured; the test proves nothing")
 	}
-	for _, banned := range []string{secretText, "Simmer", "Ignore previous", password, "new-" + password, "tomatoes"} {
+	for _, banned := range []string{
+		secretText,
+		"Simmer",
+		"Ignore previous",
+		password,
+		"new-" + password,
+		"tomatoes",
+	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("logs contain %q", banned)
 		}

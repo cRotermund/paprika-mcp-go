@@ -73,29 +73,51 @@ func (s *Service) mapError(op string, err error) error {
 	case errors.As(err, &loading):
 		msg := "The recipe index is still loading after startup, so search is not available yet. Retry in a minute"
 		if loading.Total > 0 {
-			msg = fmt.Sprintf("The recipe index is still loading (%d of %d recipes read), so search is not available yet. Retry in a minute",
-				loading.Done, loading.Total)
+			msg = fmt.Sprintf(
+				"The recipe index is still loading (%d of %d recipes read), so search is not available yet. Retry in a minute",
+				loading.Done,
+				loading.Total,
+			)
 		}
 		return &Error{Kind: KindLoading, Message: msg + "; get_recipe works meanwhile.", cause: err}
 	case errors.Is(err, paprikaclient.ErrUnauthorized):
 		s.log.Error("paprika login is failing", "op", op)
-		return &Error{Kind: KindConfig, cause: err,
-			Message: "The server cannot sign in to Paprika. This is a server configuration problem that the operator must fix; retrying will not help."}
+		return &Error{
+			Kind:    KindConfig,
+			cause:   err,
+			Message: "The server cannot sign in to Paprika. This is a server configuration problem that the operator must fix; retrying will not help.",
+		}
 	case errors.Is(err, context.Canceled):
 		return err
 	case errors.Is(err, paprikaclient.ErrTemporary), errors.Is(err, context.DeadlineExceeded):
 		s.log.Warn("paprika temporarily unavailable", "op", op, "error", err)
-		return &Error{Kind: KindTemporary, cause: err,
-			Message: "Paprika is temporarily unavailable. Retry later."}
+		return &Error{
+			Kind:    KindTemporary,
+			cause:   err,
+			Message: "Paprika is temporarily unavailable. Retry later.",
+		}
 	}
 
 	var api *paprikaclient.APIError
-	if errors.As(err, &api) || errors.Is(err, paprikaclient.ErrUnexpectedResponse) || errors.Is(err, paprikaclient.ErrResponseTooLarge) {
+	if errors.As(
+		err,
+		&api,
+	) || errors.Is(
+		err,
+		paprikaclient.ErrUnexpectedResponse,
+	) || errors.Is(err, paprikaclient.ErrResponseTooLarge) {
 		s.log.Warn("paprika answered unexpectedly", "op", op, "error", err)
-		return &Error{Kind: KindTemporary, cause: err,
-			Message: "Paprika returned an unusable response. Retry later; if this keeps happening the operator should check the server logs."}
+		return &Error{
+			Kind:    KindTemporary,
+			cause:   err,
+			Message: "Paprika returned an unusable response. Retry later; if this keeps happening the operator should check the server logs.",
+		}
 	}
 
 	s.log.Error("unexpected error", "op", op, "error", err)
-	return &Error{Kind: KindInternal, cause: err, Message: "Internal error. The operator can find details in the server logs."}
+	return &Error{
+		Kind:    KindInternal,
+		cause:   err,
+		Message: "Internal error. The operator can find details in the server logs.",
+	}
 }

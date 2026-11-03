@@ -25,15 +25,24 @@ func TestTimeoutsKeepTheirRelationship(t *testing.T) {
 	// A write makes several Paprika calls and can queue behind hung ones, so the
 	// inbound budget must hold several per-call timeouts.
 	if DefaultRequestTimeout < 4*paprikaclient.DefaultRequestTimeout {
-		t.Errorf("inbound timeout %s is under 4x the Paprika call timeout %s",
-			DefaultRequestTimeout, paprikaclient.DefaultRequestTimeout)
+		t.Errorf(
+			"inbound timeout %s is under 4x the Paprika call timeout %s",
+			DefaultRequestTimeout,
+			paprikaclient.DefaultRequestTimeout,
+		)
 	}
 	if mcpserver.DefaultCallTimeout >= DefaultRequestTimeout {
-		t.Errorf("tool call timeout %s must end before the inbound timeout %s",
-			mcpserver.DefaultCallTimeout, DefaultRequestTimeout)
+		t.Errorf(
+			"tool call timeout %s must end before the inbound timeout %s",
+			mcpserver.DefaultCallTimeout,
+			DefaultRequestTimeout,
+		)
 	}
 	if mcpserver.DefaultCallTimeout < 3*paprikaclient.DefaultRequestTimeout {
-		t.Errorf("tool call timeout %s cannot hold three Paprika call timeouts", mcpserver.DefaultCallTimeout)
+		t.Errorf(
+			"tool call timeout %s cannot hold three Paprika call timeouts",
+			mcpserver.DefaultCallTimeout,
+		)
 	}
 }
 
@@ -48,25 +57,49 @@ func TestHungPaprikaCallStillAnswersTheCaller(t *testing.T) {
 		callTimeout    time.Duration
 		inboundTimeout time.Duration
 	}{
-		{name: "Paprika call times out first", paprikaTimeout: 150 * time.Millisecond, callTimeout: 3 * time.Second, inboundTimeout: 5 * time.Second},
-		{name: "tool call deadline hits first", paprikaTimeout: 30 * time.Second, callTimeout: 300 * time.Millisecond, inboundTimeout: 5 * time.Second},
+		{
+			name:           "Paprika call times out first",
+			paprikaTimeout: 150 * time.Millisecond,
+			callTimeout:    3 * time.Second,
+			inboundTimeout: 5 * time.Second,
+		},
+		{
+			name:           "tool call deadline hits first",
+			paprikaTimeout: 30 * time.Second,
+			callTimeout:    300 * time.Millisecond,
+			inboundTimeout: 5 * time.Second,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			st := testsupport.NewStackWith(t, nil, func(f *fakepaprika.Server) {
-				f.Seed("groceryaisles", fakepaprika.SampleAisle("AISLE-1", "Produce"))
-				f.Seed("grocerylists", fakepaprika.SampleGroceryList("LIST-1", "Groceries", true))
-				f.Seed("groceries", fakepaprika.SampleGrocery("G1", "carrots", "LIST-1", "AISLE-1"))
-			}, func(c *paprikaclient.Config) { c.RequestTimeout = tt.paprikaTimeout })
+			st := testsupport.NewStackWith(
+				t,
+				nil,
+				func(f *fakepaprika.Server) {
+					f.Seed("groceryaisles", fakepaprika.SampleAisle("AISLE-1", "Produce"))
+					f.Seed(
+						"grocerylists",
+						fakepaprika.SampleGroceryList("LIST-1", "Groceries", true),
+					)
+					f.Seed(
+						"groceries",
+						fakepaprika.SampleGrocery("G1", "carrots", "LIST-1", "AISLE-1"),
+					)
+				},
+				func(c *paprikaclient.Config) { c.RequestTimeout = tt.paprikaTimeout },
+			)
 
 			verifier, err := auth.NewVerifier([]string{auth.HashToken(currentToken)})
 			if err != nil {
 				t.Fatal(err)
 			}
 			srv := httptest.NewServer(NewRouter(Options{
-				Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-				MCPServer:      mcpserver.New(st.Service, mcpserver.Options{WritesEnabled: true, CallTimeout: tt.callTimeout}),
+				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+				MCPServer: mcpserver.New(
+					st.Service,
+					mcpserver.Options{WritesEnabled: true, CallTimeout: tt.callTimeout},
+				),
 				Verifier:       verifier.Verify,
 				RequestTimeout: tt.inboundTimeout,
 				TimeoutGrace:   2 * time.Second,
@@ -75,26 +108,51 @@ func TestHungPaprikaCallStillAnswersTheCaller(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx,
+			session, err := mcp.NewClient(
+				&mcp.Implementation{Name: "test", Version: "0"},
+				nil,
+			).Connect(
+				ctx,
 				&mcp.StreamableClientTransport{
 					Endpoint:   srv.URL + "/mcp",
 					HTTPClient: &http.Client{Transport: bearerTransport{token: currentToken}},
-				}, nil)
+				},
+				nil,
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer session.Close()
 
-			st.Fake.Inject(fakepaprika.Fault{Method: "GET", Path: groceriesPath, Times: -1, Kind: fakepaprika.FaultDelay, Delay: hang})
-			st.Fake.Inject(fakepaprika.Fault{Method: "POST", Path: groceriesPath, Times: -1, Kind: fakepaprika.FaultDelay, Delay: hang})
+			st.Fake.Inject(fakepaprika.Fault{
+				Method: "GET",
+				Path:   groceriesPath,
+				Times:  -1,
+				Kind:   fakepaprika.FaultDelay,
+				Delay:  hang,
+			})
+			st.Fake.Inject(fakepaprika.Fault{
+				Method: "POST",
+				Path:   groceriesPath,
+				Times:  -1,
+				Kind:   fakepaprika.FaultDelay,
+				Delay:  hang,
+			})
 
 			start := time.Now()
 			read, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_grocery_items"})
 			if err != nil {
 				t.Fatalf("read tool: protocol error instead of a tool result: %v", err)
 			}
-			if text := resultText(read); !read.IsError || !strings.Contains(text, "temporarily unavailable") {
-				t.Errorf("read tool = IsError %v, %q; want a temporarily unavailable error", read.IsError, text)
+			if text := resultText(read); !read.IsError || !strings.Contains(
+				text,
+				"temporarily unavailable",
+			) {
+				t.Errorf(
+					"read tool = IsError %v, %q; want a temporarily unavailable error",
+					read.IsError,
+					text,
+				)
 			}
 
 			write, err := session.CallTool(ctx, &mcp.CallToolParams{
@@ -104,8 +162,15 @@ func TestHungPaprikaCallStillAnswersTheCaller(t *testing.T) {
 			if err != nil {
 				t.Fatalf("write tool: protocol error instead of a tool result: %v", err)
 			}
-			if text := resultText(write); !write.IsError || !strings.Contains(text, "may or may not") {
-				t.Errorf("write tool = IsError %v, %q; want an outcome unknown error", write.IsError, text)
+			if text := resultText(write); !write.IsError || !strings.Contains(
+				text,
+				"may or may not",
+			) {
+				t.Errorf(
+					"write tool = IsError %v, %q; want an outcome unknown error",
+					write.IsError,
+					text,
+				)
 			}
 			if n := len(st.Fake.RequestsTo("POST", groceriesPath)); n != 1 {
 				t.Errorf("grocery POSTs = %d, want exactly 1", n)

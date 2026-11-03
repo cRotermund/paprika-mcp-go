@@ -53,7 +53,11 @@ func discardLogger() *slog.Logger {
 
 // newTestClient returns a client for the fake with pacing off, a fake clock,
 // and a generous timeout. mutate may adjust the config.
-func newTestClient(t *testing.T, f *fakepaprika.Server, mutate func(*Config)) (*Client, *fakeClock) {
+func newTestClient(
+	t *testing.T,
+	f *fakepaprika.Server,
+	mutate func(*Config),
+) (*Client, *fakeClock) {
 	t.Helper()
 	clock := newFakeClock()
 	cfg := Config{
@@ -90,9 +94,15 @@ func TestNewValidatesConfig(t *testing.T) {
 	}{
 		{"no email", Config{Password: "p"}},
 		{"no password", Config{Email: "e"}},
-		{"plain http to a remote host", Config{Email: "e", Password: "p", BaseURL: "http://www.paprikaapp.com"}},
+		{
+			"plain http to a remote host",
+			Config{Email: "e", Password: "p", BaseURL: "http://www.paprikaapp.com"},
+		},
 		{"unsupported scheme", Config{Email: "e", Password: "p", BaseURL: "ftp://127.0.0.1"}},
-		{"credentials in URL", Config{Email: "e", Password: "p", BaseURL: "https://user:pw@example.test"}},
+		{
+			"credentials in URL",
+			Config{Email: "e", Password: "p", BaseURL: "https://user:pw@example.test"},
+		},
 		{"query in URL", Config{Email: "e", Password: "p", BaseURL: "https://example.test/?a=b"}},
 	}
 	for _, tt := range tests {
@@ -169,7 +179,12 @@ func TestRelogin(t *testing.T) {
 	t.Run("second 401 gives up", func(t *testing.T) {
 		f := newFake(t)
 		c, _ := newTestClient(t, f, nil)
-		f.Inject(fakepaprika.Fault{Method: "GET", Path: statusPath, Times: -1, Kind: fakepaprika.FaultUnauthorized})
+		f.Inject(fakepaprika.Fault{
+			Method: "GET",
+			Path:   statusPath,
+			Times:  -1,
+			Kind:   fakepaprika.FaultUnauthorized,
+		})
 
 		_, err := c.Status(context.Background())
 		if !errors.Is(err, ErrUnauthorized) {
@@ -222,7 +237,12 @@ func TestLoginBackoff(t *testing.T) {
 	}
 
 	logins := 0
-	for _, wait := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 4 * time.Minute} {
+	for _, wait := range []time.Duration{
+		time.Minute,
+		2 * time.Minute,
+		4 * time.Minute,
+		4 * time.Minute,
+	} {
 		if err := attempt(); !errors.Is(err, ErrUnauthorized) {
 			t.Fatalf("attempt error = %v, want ErrUnauthorized", err)
 		}
@@ -282,7 +302,12 @@ func TestSharedLogin(t *testing.T) {
 			if tt.badLogin {
 				f.SetPassword("other")
 			}
-			f.Inject(fakepaprika.Fault{Path: loginURL, Times: -1, Kind: fakepaprika.FaultDelay, Delay: 80 * time.Millisecond})
+			f.Inject(fakepaprika.Fault{
+				Path:  loginURL,
+				Times: -1,
+				Kind:  fakepaprika.FaultDelay,
+				Delay: 80 * time.Millisecond,
+			})
 
 			const callers = 6
 			errs := make(chan error, callers)
@@ -359,20 +384,38 @@ func TestErrorMapping(t *testing.T) {
 		check func(t *testing.T, err error)
 	}{
 		{
-			name:  "error envelope on HTTP 200",
-			fault: fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultEnvelopeError, Code: 7, Message: "boom"},
-			call:  func(c *Client) error { _, err := c.Status(context.Background()); return err },
+			name: "error envelope on HTTP 200",
+			fault: fakepaprika.Fault{
+				Path:    statusPath,
+				Kind:    fakepaprika.FaultEnvelopeError,
+				Code:    7,
+				Message: "boom",
+			},
+			call: func(c *Client) error { _, err := c.Status(context.Background()); return err },
 			check: func(t *testing.T, err error) {
 				var apiErr *APIError
-				if !errors.As(err, &apiErr) || apiErr.Status != 200 || apiErr.Code != 7 || apiErr.Message != "boom" {
+				if !errors.As(
+					err,
+					&apiErr,
+				) || apiErr.Status != 200 || apiErr.Code != 7 || apiErr.Message != "boom" {
 					t.Fatalf("error = %#v", err)
 				}
 			},
 		},
 		{
-			name:  "error envelope on a write",
-			fault: fakepaprika.Fault{Path: mealsPath, Kind: fakepaprika.FaultEnvelopeError, Code: 3, Message: "no"},
-			call:  func(c *Client) error { return c.SaveMeals(context.Background(), []Object{notFound}) },
+			name: "error envelope on a write",
+			fault: fakepaprika.Fault{
+				Path:    mealsPath,
+				Kind:    fakepaprika.FaultEnvelopeError,
+				Code:    3,
+				Message: "no",
+			},
+			call: func(c *Client) error {
+				return c.SaveMeals(
+					context.Background(),
+					[]Object{notFound},
+				)
+			},
 			check: func(t *testing.T, err error) {
 				var apiErr *APIError
 				if !errors.As(err, &apiErr) || apiErr.Code != 3 {
@@ -382,7 +425,13 @@ func TestErrorMapping(t *testing.T) {
 		},
 		{
 			name: "an error envelope saying not found on a recipe read is not found",
-			call: func(c *Client) error { _, err := c.GetRecipe(context.Background(), "missing"); return err },
+			call: func(c *Client) error {
+				_, err := c.GetRecipe(
+					context.Background(),
+					"missing",
+				)
+				return err
+			},
 			check: func(t *testing.T, err error) {
 				if !errors.Is(err, ErrNotFound) {
 					t.Fatalf("error = %v, want ErrNotFound", err)
@@ -390,9 +439,20 @@ func TestErrorMapping(t *testing.T) {
 			},
 		},
 		{
-			name:  "404 is not found",
-			fault: fakepaprika.Fault{Path: "/api/v2/sync/recipe/missing/", Kind: fakepaprika.FaultStatus, Status: 404, Message: "Not found."},
-			call:  func(c *Client) error { _, err := c.GetRecipe(context.Background(), "missing"); return err },
+			name: "404 is not found",
+			fault: fakepaprika.Fault{
+				Path:    "/api/v2/sync/recipe/missing/",
+				Kind:    fakepaprika.FaultStatus,
+				Status:  404,
+				Message: "Not found.",
+			},
+			call: func(c *Client) error {
+				_, err := c.GetRecipe(
+					context.Background(),
+					"missing",
+				)
+				return err
+			},
 			check: func(t *testing.T, err error) {
 				if !errors.Is(err, ErrNotFound) {
 					t.Fatalf("error = %v, want ErrNotFound", err)
@@ -442,7 +502,12 @@ func TestErrorMapping(t *testing.T) {
 		{
 			name:  "500 on a write leaves the outcome unknown",
 			fault: fakepaprika.Fault{Path: mealsPath, Kind: fakepaprika.FaultStatus, Status: 500},
-			call:  func(c *Client) error { return c.SaveMeals(context.Background(), []Object{notFound}) },
+			call: func(c *Client) error {
+				return c.SaveMeals(
+					context.Background(),
+					[]Object{notFound},
+				)
+			},
 			check: func(t *testing.T, err error) {
 				if !errors.Is(err, ErrOutcomeUnknown) {
 					t.Fatalf("error = %v, want ErrOutcomeUnknown", err)
@@ -450,9 +515,14 @@ func TestErrorMapping(t *testing.T) {
 			},
 		},
 		{
-			name:  "unexpected 4xx is an API error",
-			fault: fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultStatus, Status: 418, Code: 9},
-			call:  func(c *Client) error { _, err := c.Status(context.Background()); return err },
+			name: "unexpected 4xx is an API error",
+			fault: fakepaprika.Fault{
+				Path:   statusPath,
+				Kind:   fakepaprika.FaultStatus,
+				Status: 418,
+				Code:   9,
+			},
+			call: func(c *Client) error { _, err := c.Status(context.Background()); return err },
 			check: func(t *testing.T, err error) {
 				var apiErr *APIError
 				if !errors.As(err, &apiErr) || apiErr.Status != 418 || apiErr.Code != 9 {
@@ -461,9 +531,13 @@ func TestErrorMapping(t *testing.T) {
 			},
 		},
 		{
-			name:  "garbage body",
-			fault: fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultBody, Body: []byte("<html>")},
-			call:  func(c *Client) error { _, err := c.Status(context.Background()); return err },
+			name: "garbage body",
+			fault: fakepaprika.Fault{
+				Path: statusPath,
+				Kind: fakepaprika.FaultBody,
+				Body: []byte("<html>"),
+			},
+			call: func(c *Client) error { _, err := c.Status(context.Background()); return err },
 			check: func(t *testing.T, err error) {
 				if !errors.Is(err, ErrUnexpectedResponse) {
 					t.Fatalf("error = %v, want ErrUnexpectedResponse", err)
@@ -471,9 +545,13 @@ func TestErrorMapping(t *testing.T) {
 			},
 		},
 		{
-			name:  "write not confirmed",
-			fault: fakepaprika.Fault{Path: notifyPath, Kind: fakepaprika.FaultBody, Body: []byte(`{"result":false}`)},
-			call:  func(c *Client) error { return c.Notify(context.Background()) },
+			name: "write not confirmed",
+			fault: fakepaprika.Fault{
+				Path: notifyPath,
+				Kind: fakepaprika.FaultBody,
+				Body: []byte(`{"result":false}`),
+			},
+			call: func(c *Client) error { return c.Notify(context.Background()) },
 			check: func(t *testing.T, err error) {
 				if !errors.Is(err, ErrUnexpectedResponse) {
 					t.Fatalf("error = %v, want ErrUnexpectedResponse", err)
@@ -501,7 +579,12 @@ func TestTimeoutPause(t *testing.T) {
 		cfg.TimeoutPause = 5 * time.Minute
 	})
 	ctx := context.Background()
-	f.Inject(fakepaprika.Fault{Path: statusPath, Times: -1, Kind: fakepaprika.FaultDelay, Delay: 300 * time.Millisecond})
+	f.Inject(fakepaprika.Fault{
+		Path:  statusPath,
+		Times: -1,
+		Kind:  fakepaprika.FaultDelay,
+		Delay: 300 * time.Millisecond,
+	})
 
 	for i := range 3 {
 		if _, err := c.Status(ctx); !errors.Is(err, ErrTemporary) {
@@ -531,7 +614,11 @@ func TestTimeoutCountResetsOnSuccess(t *testing.T) {
 	})
 	ctx := context.Background()
 	for range 3 {
-		f.Inject(fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultDelay, Delay: 300 * time.Millisecond})
+		f.Inject(fakepaprika.Fault{
+			Path:  statusPath,
+			Kind:  fakepaprika.FaultDelay,
+			Delay: 300 * time.Millisecond,
+		})
 		if _, err := c.Status(ctx); !errors.Is(err, ErrTemporary) {
 			t.Fatalf("error = %v, want ErrTemporary", err)
 		}
@@ -544,7 +631,13 @@ func TestTimeoutCountResetsOnSuccess(t *testing.T) {
 func TestWriteTimeoutLeavesOutcomeUnknownWithoutRetry(t *testing.T) {
 	f := newFake(t)
 	c, _ := newTestClient(t, f, func(cfg *Config) { cfg.RequestTimeout = 30 * time.Millisecond })
-	f.Inject(fakepaprika.Fault{Method: "POST", Path: mealsPath, Times: -1, Kind: fakepaprika.FaultDelay, Delay: 300 * time.Millisecond})
+	f.Inject(fakepaprika.Fault{
+		Method: "POST",
+		Path:   mealsPath,
+		Times:  -1,
+		Kind:   fakepaprika.FaultDelay,
+		Delay:  300 * time.Millisecond,
+	})
 
 	meal := Object{}
 	_ = meal.Set("uid", "MEAL-1")
@@ -569,7 +662,11 @@ func TestRedirectIsNotFollowed(t *testing.T) {
 
 	f := newFake(t)
 	c, _ := newTestClient(t, f, nil)
-	f.Inject(fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultRedirect, Location: other.URL + "/steal"})
+	f.Inject(fakepaprika.Fault{
+		Path:     statusPath,
+		Kind:     fakepaprika.FaultRedirect,
+		Location: other.URL + "/steal",
+	})
 
 	_, err := c.Status(context.Background())
 	var apiErr *APIError
@@ -594,7 +691,12 @@ func TestResponseSizeCap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFake(t)
 			c, _ := newTestClient(t, f, func(cfg *Config) { cfg.MaxResponseBytes = 1024 })
-			f.Inject(fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultBody, Body: big, Gzip: tt.gzip})
+			f.Inject(fakepaprika.Fault{
+				Path: statusPath,
+				Kind: fakepaprika.FaultBody,
+				Body: big,
+				Gzip: tt.gzip,
+			})
 
 			if _, err := c.Status(context.Background()); !errors.Is(err, ErrResponseTooLarge) {
 				t.Fatalf("error = %v, want ErrResponseTooLarge", err)
@@ -605,7 +707,12 @@ func TestResponseSizeCap(t *testing.T) {
 	t.Run("gzip within the cap is decoded", func(t *testing.T) {
 		f := newFake(t)
 		c, _ := newTestClient(t, f, nil)
-		f.Inject(fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultBody, Body: []byte(`{"result":{"recipes":5}}`), Gzip: true})
+		f.Inject(fakepaprika.Fault{
+			Path: statusPath,
+			Kind: fakepaprika.FaultBody,
+			Body: []byte(`{"result":{"recipes":5}}`),
+			Gzip: true,
+		})
 		got, err := c.Status(context.Background())
 		if err != nil || got["recipes"] != 5 {
 			t.Fatalf("Status = %v, %v", got, err)
@@ -648,13 +755,43 @@ func TestReads(t *testing.T) {
 		want int
 		call func() (int, error)
 	}{
-		{"categories", "categories", 2, func() (int, error) { v, err := c.Categories(ctx); return len(v), err }},
+		{
+			"categories",
+			"categories",
+			2,
+			func() (int, error) { v, err := c.Categories(ctx); return len(v), err },
+		},
 		{"meals", "meals", 0, func() (int, error) { v, err := c.Meals(ctx); return len(v), err }},
-		{"mealtypes", "mealtypes", 4, func() (int, error) { v, err := c.MealTypes(ctx); return len(v), err }},
-		{"grocerylists", "grocerylists", 1, func() (int, error) { v, err := c.GroceryLists(ctx); return len(v), err }},
-		{"groceries", "groceries", 1, func() (int, error) { v, err := c.Groceries(ctx); return len(v), err }},
-		{"groceryaisles", "groceryaisles", 1, func() (int, error) { v, err := c.GroceryAisles(ctx); return len(v), err }},
-		{"groceryingredients", "groceryingredients", 0, func() (int, error) { v, err := c.GroceryIngredients(ctx); return len(v), err }},
+		{
+			"mealtypes",
+			"mealtypes",
+			4,
+			func() (int, error) { v, err := c.MealTypes(ctx); return len(v), err },
+		},
+		{
+			"grocerylists",
+			"grocerylists",
+			1,
+			func() (int, error) { v, err := c.GroceryLists(ctx); return len(v), err },
+		},
+		{
+			"groceries",
+			"groceries",
+			1,
+			func() (int, error) { v, err := c.Groceries(ctx); return len(v), err },
+		},
+		{
+			"groceryaisles",
+			"groceryaisles",
+			1,
+			func() (int, error) { v, err := c.GroceryAisles(ctx); return len(v), err },
+		},
+		{
+			"groceryingredients",
+			"groceryingredients",
+			0,
+			func() (int, error) { v, err := c.GroceryIngredients(ctx); return len(v), err },
+		},
 	}
 	for _, l := range lists {
 		t.Run(l.name, func(t *testing.T) {
@@ -727,7 +864,10 @@ func TestSaveRecipeEncodingAndRoundTrip(t *testing.T) {
 		t.Fatalf("POSTs = %d, want 1", len(posts))
 	}
 	post := posts[0]
-	if ct := post.Header.Get("Content-Type"); !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+	if ct := post.Header.Get("Content-Type"); !strings.HasPrefix(
+		ct,
+		"multipart/form-data; boundary=",
+	) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 	if len(post.Parts) != 1 || post.Parts[0].Name != "data" || post.Parts[0].Filename != "file" || !post.Parts[0].Gzipped {
@@ -742,7 +882,10 @@ func TestSaveRecipeEncodingAndRoundTrip(t *testing.T) {
 	}
 
 	stored, _ := f.StoredRecipe(fakepaprika.RecipeSoupUID)
-	if stored["name"] != "Spicy Carrot Soup" || stored["hash"] != strings.Repeat("c", 64) || stored["notes"] != "" {
+	if stored["name"] != "Spicy Carrot Soup" || stored["hash"] != strings.Repeat(
+		"c",
+		64,
+	) || stored["notes"] != "" {
 		t.Fatalf("stored = %v", stored)
 	}
 	if stored["future_field"] == nil {
@@ -758,7 +901,11 @@ func TestSaveRecipeRejectsMismatchedUID(t *testing.T) {
 	c, _ := newTestClient(t, f, nil)
 	recipe := Object{}
 	_ = recipe.Set("uid", "OTHER")
-	if err := c.SaveRecipe(context.Background(), "REC", recipe); !errors.Is(err, ErrInvalidArgument) {
+	if err := c.SaveRecipe(
+		context.Background(),
+		"REC",
+		recipe,
+	); !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("error = %v, want ErrInvalidArgument", err)
 	}
 	if err := c.SaveRecipe(context.Background(), "", recipe); !errors.Is(err, ErrInvalidArgument) {
@@ -775,9 +922,31 @@ func TestBulkSaves(t *testing.T) {
 		resource string
 		save     func(c *Client, objs []Object) error
 	}{
-		{"meals", "meals", func(c *Client, o []Object) error { return c.SaveMeals(context.Background(), o) }},
-		{"groceries", "groceries", func(c *Client, o []Object) error { return c.SaveGroceryItems(context.Background(), o) }},
-		{"grocerylists", "grocerylists", func(c *Client, o []Object) error { return c.SaveGroceryLists(context.Background(), o) }},
+		{
+			"meals",
+			"meals",
+			func(c *Client, o []Object) error { return c.SaveMeals(context.Background(), o) },
+		},
+		{
+			"groceries",
+			"groceries",
+			func(
+				c *Client,
+				o []Object,
+			) error {
+				return c.SaveGroceryItems(context.Background(), o)
+			},
+		},
+		{
+			"grocerylists",
+			"grocerylists",
+			func(
+				c *Client,
+				o []Object,
+			) error {
+				return c.SaveGroceryLists(context.Background(), o)
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -821,7 +990,10 @@ func TestBulkSaves(t *testing.T) {
 		c, _ := newTestClient(t, f, nil)
 		noUID := Object{}
 		_ = noUID.Set("name", "x")
-		if err := c.SaveMeals(context.Background(), []Object{noUID}); !errors.Is(err, ErrInvalidArgument) {
+		if err := c.SaveMeals(
+			context.Background(),
+			[]Object{noUID},
+		); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("error = %v, want ErrInvalidArgument", err)
 		}
 		if err := c.SaveMeals(context.Background(), nil); err != nil {
@@ -877,7 +1049,11 @@ func TestLogsNeverContainSecrets(t *testing.T) {
 	if _, err := c.Status(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.Inject(fakepaprika.Fault{Path: statusPath, Kind: fakepaprika.FaultDelay, Delay: 300 * time.Millisecond})
+	f.Inject(fakepaprika.Fault{
+		Path:  statusPath,
+		Kind:  fakepaprika.FaultDelay,
+		Delay: 300 * time.Millisecond,
+	})
 	_, _ = c.Status(ctx)
 	clock.Advance(time.Hour)
 	f.SetPassword("changed")
@@ -888,7 +1064,14 @@ func TestLogsNeverContainSecrets(t *testing.T) {
 	if out == "" {
 		t.Fatal("expected some log output")
 	}
-	secrets := []string{password, f.LastToken(), "fake-token-", "private-meal-name", f.Email(), "Bearer"}
+	secrets := []string{
+		password,
+		f.LastToken(),
+		"fake-token-",
+		"private-meal-name",
+		f.Email(),
+		"Bearer",
+	}
 	for _, s := range secrets {
 		if s != "" && strings.Contains(out, s) {
 			t.Errorf("log output contains %q:\n%s", s, out)

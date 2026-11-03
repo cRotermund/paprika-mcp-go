@@ -31,7 +31,10 @@ func TestFilesystemContract(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "snap", "recipe-index.json.gz")
 		return backend{
 			open: func(version int) Store {
-				return newTestStore(t, Config{Mode: ModeFilesystem, FilePath: path, FormatVersion: version})
+				return newTestStore(
+					t,
+					Config{Mode: ModeFilesystem, FilePath: path, FormatVersion: version},
+				)
 			},
 			put: func(raw []byte) {
 				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -55,13 +58,19 @@ func TestS3ContractFake(t *testing.T) {
 		return backend{
 			open: func(version int) Store {
 				return newTestStore(t, Config{
-					Mode: ModeS3, S3Bucket: bucket, S3Key: key, S3Endpoint: srv.URL,
-					FormatVersion: version, S3MaxAttempts: 1,
+					Mode:          ModeS3,
+					S3Bucket:      bucket,
+					S3Key:         key,
+					S3Endpoint:    srv.URL,
+					FormatVersion: version,
+					S3MaxAttempts: 1,
 				})
 			},
 			put: func(data []byte) {
 				_, err := raw.PutObject(context.Background(), &s3.PutObjectInput{
-					Bucket: aws.String(bucket), Key: aws.String(key), Body: bytes.NewReader(data),
+					Bucket: aws.String(bucket),
+					Key:    aws.String(key),
+					Body:   bytes.NewReader(data),
 				})
 				if err != nil {
 					t.Fatalf("plant object: %v", err)
@@ -122,16 +131,42 @@ func TestConfigFromEnv(t *testing.T) {
 		wantErr string
 	}{
 		{"default is none", map[string]string{}, Config{Mode: ModeNone, S3Key: DefaultS3Key}, ""},
-		{"filesystem", map[string]string{"INDEX_STORE": "filesystem", "INDEX_FILE_PATH": "/data/i.gz"},
-			Config{Mode: ModeFilesystem, FilePath: "/data/i.gz", S3Key: DefaultS3Key}, ""},
-		{"filesystem needs path", map[string]string{"INDEX_STORE": "filesystem"}, Config{}, "INDEX_FILE_PATH"},
-		{"s3 defaults key", map[string]string{"INDEX_STORE": "s3", "INDEX_S3_BUCKET": "b"},
-			Config{Mode: ModeS3, S3Bucket: "b", S3Key: DefaultS3Key}, ""},
-		{"s3 full", map[string]string{
-			"INDEX_STORE": " S3 ", "INDEX_S3_BUCKET": "b", "INDEX_S3_KEY": "k", "INDEX_S3_ENDPOINT": "http://x:1",
-		}, Config{Mode: ModeS3, S3Bucket: "b", S3Key: "k", S3Endpoint: "http://x:1"}, ""},
+		{
+			"filesystem",
+			map[string]string{"INDEX_STORE": "filesystem", "INDEX_FILE_PATH": "/data/i.gz"},
+			Config{Mode: ModeFilesystem, FilePath: "/data/i.gz", S3Key: DefaultS3Key},
+			"",
+		},
+		{
+			"filesystem needs path",
+			map[string]string{"INDEX_STORE": "filesystem"},
+			Config{},
+			"INDEX_FILE_PATH",
+		},
+		{
+			"s3 defaults key",
+			map[string]string{"INDEX_STORE": "s3", "INDEX_S3_BUCKET": "b"},
+			Config{Mode: ModeS3, S3Bucket: "b", S3Key: DefaultS3Key},
+			"",
+		},
+		{
+			"s3 full",
+			map[string]string{
+				"INDEX_STORE":       " S3 ",
+				"INDEX_S3_BUCKET":   "b",
+				"INDEX_S3_KEY":      "k",
+				"INDEX_S3_ENDPOINT": "http://x:1",
+			},
+			Config{Mode: ModeS3, S3Bucket: "b", S3Key: "k", S3Endpoint: "http://x:1"},
+			"",
+		},
 		{"s3 needs bucket", map[string]string{"INDEX_STORE": "s3"}, Config{}, "INDEX_S3_BUCKET"},
-		{"unknown mode", map[string]string{"INDEX_STORE": "redis"}, Config{}, "unknown INDEX_STORE"},
+		{
+			"unknown mode",
+			map[string]string{"INDEX_STORE": "redis"},
+			Config{},
+			"unknown INDEX_STORE",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -185,9 +220,18 @@ func TestS3SaveErrors(t *testing.T) {
 		cfg    Config
 		wantIn string
 	}{
-		{"500 on PUT", func(f *fakeS3) { f.failPuts.Store(100) }, Config{S3MaxAttempts: 1}, "InternalError"},
-		{"timeout", func(f *fakeS3) { f.hang.Store(true) },
-			Config{S3MaxAttempts: 1, OperationTimeout: 150 * time.Millisecond}, ""},
+		{
+			"500 on PUT",
+			func(f *fakeS3) { f.failPuts.Store(100) },
+			Config{S3MaxAttempts: 1},
+			"InternalError",
+		},
+		{
+			"timeout",
+			func(f *fakeS3) { f.hang.Store(true) },
+			Config{S3MaxAttempts: 1, OperationTimeout: 150 * time.Millisecond},
+			"",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -215,11 +259,18 @@ func TestSaverRetriesNextIntervalAfterS3Failure(t *testing.T) {
 	setAWSEnv(t, fakeAccessKey, fakeSecretKey)
 	fake, srv := newFakeS3(t)
 	fake.failPuts.Store(1)
-	s := newTestStore(t, Config{Mode: ModeS3, S3Bucket: "bucket", S3Endpoint: srv.URL, S3MaxAttempts: 1})
+	s := newTestStore(
+		t,
+		Config{Mode: ModeS3, S3Bucket: "bucket", S3Endpoint: srv.URL, S3MaxAttempts: 1},
+	)
 
-	saver := NewSaver(s, func(context.Context) (Snapshot, error) {
-		return Snapshot{Payload: []byte(`["x"]`)}, nil
-	}, SaverConfig{Interval: 30 * time.Millisecond, Logger: slog.New(slog.DiscardHandler)})
+	saver := NewSaver(
+		s,
+		func(context.Context) (Snapshot, error) {
+			return Snapshot{Payload: []byte(`["x"]`)}, nil
+		},
+		SaverConfig{Interval: 30 * time.Millisecond, Logger: slog.New(slog.DiscardHandler)},
+	)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { saver.Run(ctx); close(done) }()
@@ -249,7 +300,12 @@ func (m *memStore) Save(context.Context, Snapshot) error {
 }
 
 func TestSaver(t *testing.T) {
-	source := func(context.Context) (Snapshot, error) { return Snapshot{Payload: []byte(`[]`)}, nil }
+	source := func(context.Context) (
+		Snapshot,
+		error,
+	) {
+		return Snapshot{Payload: []byte(`[]`)}, nil
+	}
 	quiet := slog.New(slog.DiscardHandler)
 
 	t.Run("no save without a change", func(t *testing.T) {
@@ -353,7 +409,11 @@ func TestSaverStaysSilentForTheNoneStore(t *testing.T) {
 		called = true
 		return Snapshot{Payload: []byte(`[]`)}, nil
 	}
-	saver := NewSaver(newTestStore(t, Config{}), source, SaverConfig{Interval: 10 * time.Millisecond, Logger: logger})
+	saver := NewSaver(
+		newTestStore(t, Config{}),
+		source,
+		SaverConfig{Interval: 10 * time.Millisecond, Logger: logger},
+	)
 	saver.MarkDirty()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -362,6 +422,10 @@ func TestSaverStaysSilentForTheNoneStore(t *testing.T) {
 	cancel()
 	<-done
 	if called || logs.Len() != 0 {
-		t.Errorf("source called = %v, log = %q; want neither for the none store", called, logs.String())
+		t.Errorf(
+			"source called = %v, log = %q; want neither for the none store",
+			called,
+			logs.String(),
+		)
 	}
 }

@@ -37,7 +37,10 @@ type Writer interface {
 	GroceryLists(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryList], error)
 	Groceries(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.Grocery], error)
 	GroceryAisles(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryAisle], error)
-	GroceryIngredients(ctx context.Context) ([]paprikaclient.Entry[paprikaclient.GroceryIngredient], error)
+	GroceryIngredients(ctx context.Context) (
+		[]paprikaclient.Entry[paprikaclient.GroceryIngredient],
+		error,
+	)
 	SaveRecipe(ctx context.Context, uid string, recipe paprikaclient.Object) error
 	SaveMeals(ctx context.Context, meals []paprikaclient.Object) error
 	SaveGroceryItems(ctx context.Context, items []paprikaclient.Object) error
@@ -77,7 +80,12 @@ type change struct {
 // devices, and writes the audit entries. A failed notify is not a failed write:
 // it returns a warning. A POST is never retried; a timeout is an unknown
 // outcome.
-func (s *Service) commit(ctx context.Context, tool, resource string, changes []change, post func(context.Context) error) (string, error) {
+func (s *Service) commit(
+	ctx context.Context,
+	tool, resource string,
+	changes []change,
+	post func(context.Context) error,
+) (string, error) {
 	if err := post(ctx); err != nil {
 		outcome := "failed"
 		if errors.Is(err, paprikaclient.ErrOutcomeUnknown) {
@@ -102,8 +110,21 @@ func (s *Service) commit(ctx context.Context, tool, resource string, changes []c
 // fields changed, and the outcome. It never logs values.
 func (s *Service) audit(tool, resource string, changes []change, outcome string) {
 	for _, c := range changes {
-		s.log.Info("write", "audit", true, "tool", tool, "resource", resource, "uid", c.uid,
-			"fields", strings.Join(c.fields, ","), "outcome", outcome)
+		s.log.Info(
+			"write",
+			"audit",
+			true,
+			"tool",
+			tool,
+			"resource",
+			resource,
+			"uid",
+			c.uid,
+			"fields",
+			strings.Join(c.fields, ","),
+			"outcome",
+			outcome,
+		)
 	}
 }
 
@@ -112,8 +133,11 @@ func (s *Service) audit(tool, resource string, changes []change, outcome string)
 func (s *Service) mapWriteError(op string, err error) error {
 	if errors.Is(err, paprikaclient.ErrOutcomeUnknown) {
 		s.log.Warn("write outcome unknown", "op", op, "error", err)
-		return &Error{Kind: KindOutcomeUnknown, cause: err,
-			Message: "Paprika did not confirm the write, so it may or may not have been applied. Do not repeat it yet: read the object again (get_recipe, list_meals, or list_grocery_items) and retry only if the change is missing."}
+		return &Error{
+			Kind:    KindOutcomeUnknown,
+			cause:   err,
+			Message: "Paprika did not confirm the write, so it may or may not have been applied. Do not repeat it yet: read the object again (get_recipe, list_meals, or list_grocery_items) and retry only if the change is missing.",
+		}
 	}
 	return s.mapError(op, err)
 }

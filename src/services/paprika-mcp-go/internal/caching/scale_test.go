@@ -37,9 +37,14 @@ func syntheticRecipe(i int) paprikaclient.Recipe {
 		fmt.Fprintf(&ing, "%d cups %s %s, finely chopped\n", j+1, w1, w2)
 	}
 	return paprikaclient.Recipe{
-		UID:         fmt.Sprintf("%08X-0000-4000-8000-%012X", i, i),
-		Hash:        fmt.Sprintf("%064X", i*2654435761),
-		Name:        fmt.Sprintf("%s and %s Casserole Number %d", title(vocabulary[i%len(vocabulary)]), title(vocabulary[(i*3)%len(vocabulary)]), i),
+		UID:  fmt.Sprintf("%08X-0000-4000-8000-%012X", i, i),
+		Hash: fmt.Sprintf("%064X", i*2654435761),
+		Name: fmt.Sprintf(
+			"%s and %s Casserole Number %d",
+			title(vocabulary[i%len(vocabulary)]),
+			title(vocabulary[(i*3)%len(vocabulary)]),
+			i,
+		),
 		Created:     "2030-01-01 00:00:00",
 		Ingredients: ing.String(),
 		Directions:  strings.Repeat("Mix well and bake until golden. ", 40),
@@ -67,7 +72,10 @@ func (s *syntheticSource) ListRecipes(context.Context) ([]paprikaclient.RecipeRe
 	return refs, nil
 }
 
-func (s *syntheticSource) GetRecipe(_ context.Context, uid string) (paprikaclient.Entry[paprikaclient.Recipe], error) {
+func (s *syntheticSource) GetRecipe(
+	_ context.Context,
+	uid string,
+) (paprikaclient.Entry[paprikaclient.Recipe], error) {
 	var i int
 	if _, err := fmt.Sscanf(uid[:8], "%X", &i); err != nil {
 		return paprikaclient.Entry[paprikaclient.Recipe]{}, paprikaclient.ErrNotFound
@@ -75,10 +83,19 @@ func (s *syntheticSource) GetRecipe(_ context.Context, uid string) (paprikaclien
 	return paprikaclient.Entry[paprikaclient.Recipe]{Value: syntheticRecipe(i)}, nil
 }
 
-func (s *syntheticSource) Categories(context.Context) ([]paprikaclient.Entry[paprikaclient.Category], error) {
+func (s *syntheticSource) Categories(context.Context) (
+	[]paprikaclient.Entry[paprikaclient.Category],
+	error,
+) {
 	var out []paprikaclient.Entry[paprikaclient.Category]
 	for i := range 17 {
-		out = append(out, paprikaclient.Entry[paprikaclient.Category]{Value: paprikaclient.Category{UID: fmt.Sprintf("CAT-%d", i), Name: fmt.Sprintf("Category %d", i)}})
+		out = append(
+			out,
+			paprikaclient.Entry[paprikaclient.Category]{Value: paprikaclient.Category{
+				UID:  fmt.Sprintf("CAT-%d", i),
+				Name: fmt.Sprintf("Category %d", i),
+			}},
+		)
 	}
 	return out, nil
 }
@@ -98,7 +115,10 @@ func TestMemoryAndSpeedAtFiveThousandRecipes(t *testing.T) {
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	m := caching.New(src, caching.Options{Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	m := caching.New(
+		src,
+		caching.Options{Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))},
+	)
 	if err := m.Sync(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +143,15 @@ func TestMemoryAndSpeedAtFiveThousandRecipes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("5000-recipe index: heap %.1f MiB (%d bytes per recipe), snapshot %.1f MiB JSON / %.1f MiB gzip, search %v (%d hits)",
-		float64(heap)/(1<<20), heap/n, float64(len(snap.Payload))/(1<<20), float64(gz.Len())/(1<<20), elapsed, len(hits))
+	t.Logf(
+		"5000-recipe index: heap %.1f MiB (%d bytes per recipe), snapshot %.1f MiB JSON / %.1f MiB gzip, search %v (%d hits)",
+		float64(heap)/(1<<20),
+		heap/n,
+		float64(len(snap.Payload))/(1<<20),
+		float64(gz.Len())/(1<<20),
+		elapsed,
+		len(hits),
+	)
 
 	if got := m.Progress().Recipes; got != n {
 		t.Fatalf("indexed %d recipes, want %d", got, n)

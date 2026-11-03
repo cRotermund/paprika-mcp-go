@@ -13,13 +13,25 @@ import (
 )
 
 var writeToolNames = []string{
-	"create_recipe", "update_recipe", "trash_recipe", "restore_recipe",
-	"add_meals", "update_meal", "delete_meal",
-	"add_grocery_items", "update_grocery_item", "delete_grocery_item", "create_grocery_list", "delete_grocery_list",
+	"create_recipe",
+	"update_recipe",
+	"trash_recipe",
+	"restore_recipe",
+	"add_meals",
+	"update_meal",
+	"delete_meal",
+	"add_grocery_items",
+	"update_grocery_item",
+	"delete_grocery_item",
+	"create_grocery_list",
+	"delete_grocery_list",
 }
 
 var destructiveTools = map[string]bool{
-	"trash_recipe": true, "delete_meal": true, "delete_grocery_item": true, "delete_grocery_list": true,
+	"trash_recipe":        true,
+	"delete_meal":         true,
+	"delete_grocery_item": true,
+	"delete_grocery_list": true,
 }
 
 func writeSession(t *testing.T) (*mcp.ClientSession, *testsupport.Stack) {
@@ -50,7 +62,10 @@ func TestWriteToolsAbsentWhenDisabled(t *testing.T) {
 			t.Errorf("write tool %s is registered although writes are disabled", name)
 		}
 	}
-	if _, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_recipe", Arguments: map[string]any{"name": "X"}}); err == nil {
+	if _, err := s.CallTool(
+		context.Background(),
+		&mcp.CallToolParams{Name: "create_recipe", Arguments: map[string]any{"name": "X"}},
+	); err == nil {
 		t.Error("calling an unregistered write tool should fail")
 	}
 }
@@ -69,7 +84,11 @@ func TestWriteToolsPresentWhenEnabled(t *testing.T) {
 		}
 		a := tool.Annotations
 		if a == nil || a.ReadOnlyHint || a.DestructiveHint == nil {
-			t.Errorf("%s annotations = %+v, want readOnlyHint false and an explicit destructiveHint", name, a)
+			t.Errorf(
+				"%s annotations = %+v, want readOnlyHint false and an explicit destructiveHint",
+				name,
+				a,
+			)
 			continue
 		}
 		if *a.DestructiveHint != destructiveTools[name] {
@@ -104,7 +123,17 @@ type recipeWritten struct {
 func TestRecipeWriteTools(t *testing.T) {
 	s, st := writeSession(t)
 	var created recipeWritten
-	res := call(t, s, "create_recipe", map[string]any{"name": "MCP-TEST Stew", "ingredients": "beef", "categories": []string{"dinner"}}, &created)
+	res := call(
+		t,
+		s,
+		"create_recipe",
+		map[string]any{
+			"name":        "MCP-TEST Stew",
+			"ingredients": "beef",
+			"categories":  []string{"dinner"},
+		},
+		&created,
+	)
 	if res.IsError || created.UID == "" || len(created.Categories) != 1 || created.Categories[0].Name != "Dinner" {
 		t.Fatalf("create_recipe = %+v %+v", created, text(res))
 	}
@@ -115,12 +144,24 @@ func TestRecipeWriteTools(t *testing.T) {
 		t.Fatalf("search after create = %+v", found)
 	}
 
-	res = call(t, s, "update_recipe", map[string]any{"uid": created.UID, "expected_hash": "STALE", "rating": 5}, nil)
+	res = call(
+		t,
+		s,
+		"update_recipe",
+		map[string]any{"uid": created.UID, "expected_hash": "STALE", "rating": 5},
+		nil,
+	)
 	if !res.IsError || !strings.Contains(text(res), "get_recipe") {
 		t.Fatalf("stale update = %v %s", res.IsError, text(res))
 	}
 	var updated recipeWritten
-	call(t, s, "update_recipe", map[string]any{"uid": created.UID, "expected_hash": created.Hash, "rating": 5}, &updated)
+	call(
+		t,
+		s,
+		"update_recipe",
+		map[string]any{"uid": created.UID, "expected_hash": created.Hash, "rating": 5},
+		&updated,
+	)
 	if len(updated.Changed) != 1 || updated.Changed[0] != "rating" || updated.Hash == created.Hash {
 		t.Fatalf("update = %+v", updated)
 	}
@@ -141,7 +182,13 @@ func TestRecipeWriteTools(t *testing.T) {
 		t.Fatalf("restore = %+v", restored)
 	}
 
-	res = call(t, s, "create_recipe", map[string]any{"name": "X", "categories": []string{"Brunchy"}}, nil)
+	res = call(
+		t,
+		s,
+		"create_recipe",
+		map[string]any{"name": "X", "categories": []string{"Brunchy"}},
+		nil,
+	)
 	if !res.IsError || !strings.Contains(text(res), `"Brunchy"`) {
 		t.Fatalf("unknown category = %v %s", res.IsError, text(res))
 	}
@@ -158,7 +205,10 @@ func TestGetRecipeUnknownUIDMessage(t *testing.T) {
 	s, _ := newSession(t)
 	res := call(t, s, "get_recipe", map[string]any{"uid": "NOPE"}, nil)
 	msg := text(res)
-	if !res.IsError || !strings.Contains(msg, `No recipe has the uid "NOPE"`) || strings.Contains(strings.ToLower(msg), "unusable") {
+	if !res.IsError || !strings.Contains(
+		msg,
+		`No recipe has the uid "NOPE"`,
+	) || strings.Contains(strings.ToLower(msg), "unusable") {
 		t.Fatalf("message = %q", msg)
 	}
 }
@@ -180,10 +230,16 @@ func TestMealAndGroceryWriteTools(t *testing.T) {
 			} `json:"meal"`
 		} `json:"results"`
 	}
-	res := call(t, s, "add_meals", map[string]any{"meals": []map[string]any{
-		{"date": "2030-07-01", "meal_type": "dinner", "recipe_uid": "R1"},
-		{"date": "2030-07-01", "meal_type": "Elevenses", "name": "Tea"},
-	}}, &added)
+	res := call(
+		t,
+		s,
+		"add_meals",
+		map[string]any{"meals": []map[string]any{
+			{"date": "2030-07-01", "meal_type": "dinner", "recipe_uid": "R1"},
+			{"date": "2030-07-01", "meal_type": "Elevenses", "name": "Tea"},
+		}},
+		&added,
+	)
 	if res.IsError || added.Added != 1 || added.Failed != 1 || !added.Results[0].OK || added.Results[0].Meal.MealType != "Dinner" ||
 		!strings.Contains(added.Results[1].Error, `"Elevenses"`) {
 		t.Fatalf("add_meals = %+v %s", added, text(res))
@@ -204,10 +260,19 @@ func TestMealAndGroceryWriteTools(t *testing.T) {
 		Note    string         `json:"note"`
 	}
 	call(t, s, "delete_meal", map[string]any{"uid": mealUID}, &deleted)
-	if !deleted.Deleted || deleted.Before["uid"] != mealUID || deleted.Before["date"] != "2030-07-02 00:00:00" || !strings.Contains(deleted.Note, "undoable") {
+	if !deleted.Deleted || deleted.Before["uid"] != mealUID || deleted.Before["date"] != "2030-07-02 00:00:00" || !strings.Contains(
+		deleted.Note,
+		"undoable",
+	) {
 		t.Fatalf("delete_meal = %+v", deleted)
 	}
-	if res := call(t, s, "add_meals", map[string]any{"meals": []map[string]any{}}, nil); !res.IsError {
+	if res := call(
+		t,
+		s,
+		"add_meals",
+		map[string]any{"meals": []map[string]any{}},
+		nil,
+	); !res.IsError {
 		t.Error("an empty batch should be an error")
 	}
 
@@ -222,7 +287,16 @@ func TestMealAndGroceryWriteTools(t *testing.T) {
 			} `json:"item"`
 		} `json:"results"`
 	}
-	call(t, s, "add_grocery_items", map[string]any{"items": []map[string]any{{"text": "2 leeks"}, {"text": "milk", "aisle": "Produce"}}}, &groceries)
+	call(
+		t,
+		s,
+		"add_grocery_items",
+		map[string]any{"items": []map[string]any{
+			{"text": "2 leeks"},
+			{"text": "milk", "aisle": "Produce"},
+		}},
+		&groceries,
+	)
 	if groceries.Added != 2 || groceries.ListName != "Groceries" || groceries.Results[0].Item == nil || groceries.Results[0].Item.Aisle != "Produce" {
 		t.Fatalf("add_grocery_items = %+v", groceries)
 	}
@@ -260,7 +334,13 @@ func TestMealAndGroceryWriteTools(t *testing.T) {
 	if newList.List.UID == "" {
 		t.Fatal("no list uid")
 	}
-	if res := call(t, s, "delete_grocery_list", map[string]any{"list": "Groceries"}, nil); !res.IsError || !strings.Contains(text(res), "default") {
+	if res := call(
+		t,
+		s,
+		"delete_grocery_list",
+		map[string]any{"list": "Groceries"},
+		nil,
+	); !res.IsError || !strings.Contains(text(res), "default") {
 		t.Errorf("default list delete = %s", text(res))
 	}
 	call(t, s, "delete_grocery_list", map[string]any{"list": newList.List.UID}, &deleted)
@@ -292,13 +372,29 @@ func TestMealTypesWhenTheAccountHasNone(t *testing.T) {
 			MealType string `json:"meal_type"`
 		} `json:"meals"`
 	}
-	call(t, s, "list_meals", map[string]any{"start_date": "2030-05-01", "end_date": "2030-05-01"}, &meals)
+	call(
+		t,
+		s,
+		"list_meals",
+		map[string]any{"start_date": "2030-05-01", "end_date": "2030-05-01"},
+		&meals,
+	)
 	if len(meals.Meals) != 2 || meals.Meals[0].MealType != "Lunch" || meals.Meals[1].MealType != "Dinner" {
 		t.Fatalf("meals = %+v", meals)
 	}
 
 	var added struct{ Added int }
-	call(t, s, "add_meals", map[string]any{"meals": []map[string]any{{"date": "2030-05-03", "meal_type": "snacks", "name": "Popcorn"}}}, &added)
+	call(
+		t,
+		s,
+		"add_meals",
+		map[string]any{"meals": []map[string]any{{
+			"date":      "2030-05-03",
+			"meal_type": "snacks",
+			"name":      "Popcorn",
+		}}},
+		&added,
+	)
 	if added.Added != 1 {
 		t.Fatalf("add_meals = %+v", added)
 	}

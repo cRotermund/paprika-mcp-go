@@ -87,7 +87,11 @@ func (f RecipeFields) validate(requireName bool) error {
 	}
 	if f.Categories != nil {
 		if len(*f.Categories) > maxCategoriesPerRecipe {
-			return invalid("categories holds %d entries; use at most %d.", len(*f.Categories), maxCategoriesPerRecipe)
+			return invalid(
+				"categories holds %d entries; use at most %d.",
+				len(*f.Categories),
+				maxCategoriesPerRecipe,
+			)
 		}
 		for _, c := range *f.Categories {
 			if strings.TrimSpace(c) == "" {
@@ -198,8 +202,20 @@ func (s *Service) CreateRecipe(ctx context.Context, f RecipeFields) (RecipeWrite
 	o := paprikaclient.Object{}
 	mustSet(o, "uid", uid)
 	mustSet(o, "created", s.now().UTC().Format("2006-01-02 15:04:05"))
-	for _, k := range []string{"description", "ingredients", "directions", "notes", "nutritional_info", "prep_time",
-		"cook_time", "total_time", "difficulty", "servings", "source", "source_url"} {
+	for _, k := range []string{
+		"description",
+		"ingredients",
+		"directions",
+		"notes",
+		"nutritional_info",
+		"prep_time",
+		"cook_time",
+		"total_time",
+		"difficulty",
+		"servings",
+		"source",
+		"source_url",
+	} {
 		mustSet(o, k, "")
 	}
 	mustSet(o, "rating", 0)
@@ -218,7 +234,12 @@ func (s *Service) CreateRecipe(ctx context.Context, f RecipeFields) (RecipeWrite
 
 // UpdateRecipe changes the given fields of a recipe. A non-empty expectedHash
 // must equal the recipe's current hash, or the update is refused as a conflict.
-func (s *Service) UpdateRecipe(ctx context.Context, uid string, f RecipeFields, expectedHash string) (RecipeWrite, error) {
+func (s *Service) UpdateRecipe(
+	ctx context.Context,
+	uid string,
+	f RecipeFields,
+	expectedHash string,
+) (RecipeWrite, error) {
 	const tool = "update_recipe"
 	uid, err := requireText("uid", uid, maxRefLen)
 	if err != nil {
@@ -245,7 +266,10 @@ func (s *Service) UpdateRecipe(ctx context.Context, uid string, f RecipeFields, 
 	}
 	if expectedHash != "" && o.String("hash") != expectedHash {
 		s.audit(tool, resRecipe, []change{{uid: uid}}, "conflict")
-		return RecipeWrite{}, conflict("The recipe changed since you read it: its hash is no longer %q. Call get_recipe, check the current text, and apply your change to that.", expectedHash)
+		return RecipeWrite{}, conflict(
+			"The recipe changed since you read it: its hash is no longer %q. Call get_recipe, check the current text, and apply your change to that.",
+			expectedHash,
+		)
 	}
 	catUIDs, err := s.resolveCategories(ctx, f.Categories)
 	if err != nil {
@@ -268,7 +292,11 @@ func (s *Service) RestoreRecipe(ctx context.Context, uid string) (RecipeWrite, e
 	return s.setTrash(ctx, "restore_recipe", uid, false)
 }
 
-func (s *Service) setTrash(ctx context.Context, tool, uid string, trashed bool) (RecipeWrite, error) {
+func (s *Service) setTrash(
+	ctx context.Context,
+	tool, uid string,
+	trashed bool,
+) (RecipeWrite, error) {
 	uid, err := requireText("uid", uid, maxRefLen)
 	if err != nil {
 		return RecipeWrite{}, err
@@ -295,25 +323,43 @@ func (s *Service) readRecipe(ctx context.Context, uid string) (paprikaclient.Obj
 	entry, err := s.w.GetRecipe(ctx, uid)
 	if err != nil {
 		if isNotFound(err) {
-			return nil, notFound("No recipe has the uid %q. Use search_recipes to find a valid uid.", uid)
+			return nil, notFound(
+				"No recipe has the uid %q. Use search_recipes to find a valid uid.",
+				uid,
+			)
 		}
 		return nil, s.mapError("read_recipe", err)
 	}
 	return entry.Raw.Clone(), nil
 }
 
-func (s *Service) unchangedRecipe(ctx context.Context, tool, uid string, o paprikaclient.Object) RecipeWrite {
+func (s *Service) unchangedRecipe(
+	ctx context.Context,
+	tool, uid string,
+	o paprikaclient.Object,
+) RecipeWrite {
 	s.audit(tool, resRecipe, []change{{uid: uid}}, "no_change")
 	return RecipeWrite{Recipe: s.recipeDetail(ctx, recipeValue(o)), NoChange: true}
 }
 
 // saveRecipe gives the recipe a new hash, sends it, and updates the cache.
-func (s *Service) saveRecipe(ctx context.Context, tool, uid string, o paprikaclient.Object, changed []string) (RecipeWrite, error) {
+func (s *Service) saveRecipe(
+	ctx context.Context,
+	tool, uid string,
+	o paprikaclient.Object,
+	changed []string,
+) (RecipeWrite, error) {
 	mustSet(o, "hash", newHash())
 	mustSet(o, "deleted", false)
-	warning, err := s.commit(ctx, tool, resRecipe, []change{{uid: uid, fields: changed}}, func(c context.Context) error {
-		return s.w.SaveRecipe(c, uid, o)
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resRecipe,
+		[]change{{uid: uid, fields: changed}},
+		func(c context.Context) error {
+			return s.w.SaveRecipe(c, uid, o)
+		},
+	)
 	if err != nil {
 		return RecipeWrite{}, err
 	}

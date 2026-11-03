@@ -27,19 +27,58 @@ func TestLoad(t *testing.T) {
 		wantErr     bool
 	}{
 		{name: "valid", port: "8080", tokens: hashA, wantPort: 8080, wantTokens: []string{hashA}},
-		{name: "two hashes", port: "8080", tokens: hashA + "," + hashB, wantPort: 8080, wantTokens: []string{hashA, hashB}},
-		{name: "origins", port: "8080", tokens: hashA, origins: "https://Claude.ai, http://localhost:3000", wantPort: 8080,
-			wantTokens: []string{hashA}, wantOrigins: []string{"https://claude.ai", "http://localhost:3000"}},
-		{name: "writes on", port: "8080", tokens: hashA, writes: "true", wantPort: 8080, wantTokens: []string{hashA}, wantWrites: true},
-		{name: "writes off explicitly", port: "8080", tokens: hashA, writes: "false", wantPort: 8080, wantTokens: []string{hashA}},
+		{
+			name:       "two hashes",
+			port:       "8080",
+			tokens:     hashA + "," + hashB,
+			wantPort:   8080,
+			wantTokens: []string{hashA, hashB},
+		},
+		{
+			name:        "origins",
+			port:        "8080",
+			tokens:      hashA,
+			origins:     "https://Claude.ai, http://localhost:3000",
+			wantPort:    8080,
+			wantTokens:  []string{hashA},
+			wantOrigins: []string{"https://claude.ai", "http://localhost:3000"},
+		},
+		{
+			name:       "writes on",
+			port:       "8080",
+			tokens:     hashA,
+			writes:     "true",
+			wantPort:   8080,
+			wantTokens: []string{hashA},
+			wantWrites: true,
+		},
+		{
+			name:       "writes off explicitly",
+			port:       "8080",
+			tokens:     hashA,
+			writes:     "false",
+			wantPort:   8080,
+			wantTokens: []string{hashA},
+		},
 		{name: "missing port", tokens: hashA, wantErr: true},
 		{name: "non-numeric port", port: "abc", tokens: hashA, wantErr: true},
 		{name: "missing token hash", port: "8080", wantErr: true},
-		{name: "three token hashes", port: "8080", tokens: hashA + "," + hashB + "," + hashA, wantErr: true},
+		{
+			name:    "three token hashes",
+			port:    "8080",
+			tokens:  hashA + "," + hashB + "," + hashA,
+			wantErr: true,
+		},
 		{name: "short token hash", port: "8080", tokens: hashA[:10], wantErr: true},
 		{name: "raw token instead of hash", port: "8080", tokens: "plain-token", wantErr: true},
 		{name: "bad origin", port: "8080", tokens: hashA, origins: "claude.ai", wantErr: true},
-		{name: "origin with path", port: "8080", tokens: hashA, origins: "https://claude.ai/app", wantErr: true},
+		{
+			name:    "origin with path",
+			port:    "8080",
+			tokens:  hashA,
+			origins: "https://claude.ai/app",
+			wantErr: true,
+		},
 		{name: "bad writes flag", port: "8080", tokens: hashA, writes: "maybe", wantErr: true},
 	}
 
@@ -120,7 +159,13 @@ func setAccount(t *testing.T) {
 	t.Helper()
 	t.Setenv(EnvPaprikaEmail, "cook@example.test")
 	t.Setenv(EnvPaprikaPass, "s3cret-password")
-	for _, name := range []string{"INDEX_STORE", "INDEX_FILE_PATH", "INDEX_S3_BUCKET", "INDEX_S3_KEY", "INDEX_S3_ENDPOINT"} {
+	for _, name := range []string{
+		"INDEX_STORE",
+		"INDEX_FILE_PATH",
+		"INDEX_S3_BUCKET",
+		"INDEX_S3_KEY",
+		"INDEX_S3_ENDPOINT",
+	} {
 		t.Setenv(name, "")
 	}
 }
@@ -134,29 +179,85 @@ func TestLoadAccountAndIndex(t *testing.T) {
 		wantErr  bool
 		check    func(t *testing.T, cfg *Config)
 	}{
-		{name: "account is read", httpMode: true, env: map[string]string{}, check: func(t *testing.T, cfg *Config) {
-			if cfg.PaprikaEmail != "cook@example.test" || cfg.PaprikaPassword != "s3cret-password" {
-				t.Errorf("account = %q / %q", cfg.PaprikaEmail, cfg.PaprikaPassword)
-			}
-			if cfg.Index.Mode != indexstore.ModeNone {
-				t.Errorf("index mode = %q, want none", cfg.Index.Mode)
-			}
-		}},
-		{name: "missing email", httpMode: true, env: map[string]string{EnvPaprikaEmail: ""}, wantErr: true},
-		{name: "missing password", httpMode: true, env: map[string]string{EnvPaprikaPass: ""}, wantErr: true},
-		{name: "stdio needs the account too", httpMode: false, env: map[string]string{EnvPaprikaPass: ""}, wantErr: true},
-		{name: "stdio needs no port or token", httpMode: false, env: map[string]string{EnvPort: "", EnvTokenSHA256: ""}},
-		{name: "http needs a token", httpMode: true, env: map[string]string{EnvTokenSHA256: ""}, wantErr: true},
-		{name: "filesystem index", httpMode: true, env: map[string]string{"INDEX_STORE": "filesystem", "INDEX_FILE_PATH": "/data/i.gz"},
+		{
+			name:     "account is read",
+			httpMode: true,
+			env:      map[string]string{},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.PaprikaEmail != "cook@example.test" || cfg.PaprikaPassword != "s3cret-password" {
+					t.Errorf("account = %q / %q", cfg.PaprikaEmail, cfg.PaprikaPassword)
+				}
+				if cfg.Index.Mode != indexstore.ModeNone {
+					t.Errorf("index mode = %q, want none", cfg.Index.Mode)
+				}
+			},
+		},
+		{
+			name:     "missing email",
+			httpMode: true,
+			env:      map[string]string{EnvPaprikaEmail: ""},
+			wantErr:  true,
+		},
+		{
+			name:     "missing password",
+			httpMode: true,
+			env:      map[string]string{EnvPaprikaPass: ""},
+			wantErr:  true,
+		},
+		{
+			name:     "stdio needs the account too",
+			httpMode: false,
+			env:      map[string]string{EnvPaprikaPass: ""},
+			wantErr:  true,
+		},
+		{
+			name:     "stdio needs no port or token",
+			httpMode: false,
+			env:      map[string]string{EnvPort: "", EnvTokenSHA256: ""},
+		},
+		{
+			name:     "http needs a token",
+			httpMode: true,
+			env:      map[string]string{EnvTokenSHA256: ""},
+			wantErr:  true,
+		},
+		{
+			name:     "filesystem index",
+			httpMode: true,
+			env: map[string]string{
+				"INDEX_STORE":     "filesystem",
+				"INDEX_FILE_PATH": "/data/i.gz",
+			},
 			check: func(t *testing.T, cfg *Config) {
 				if cfg.Index.Mode != indexstore.ModeFilesystem || cfg.Index.FilePath != "/data/i.gz" {
 					t.Errorf("index = %+v", cfg.Index)
 				}
-			}},
-		{name: "unknown index mode stops startup", httpMode: true, env: map[string]string{"INDEX_STORE": "redis"}, wantErr: true},
-		{name: "filesystem without a path stops startup", httpMode: true, env: map[string]string{"INDEX_STORE": "filesystem"}, wantErr: true},
-		{name: "s3 without a bucket stops startup", httpMode: true, env: map[string]string{"INDEX_STORE": "s3"}, wantErr: true},
-		{name: "bad index config stops stdio too", httpMode: false, env: map[string]string{"INDEX_STORE": "nope"}, wantErr: true},
+			},
+		},
+		{
+			name:     "unknown index mode stops startup",
+			httpMode: true,
+			env:      map[string]string{"INDEX_STORE": "redis"},
+			wantErr:  true,
+		},
+		{
+			name:     "filesystem without a path stops startup",
+			httpMode: true,
+			env:      map[string]string{"INDEX_STORE": "filesystem"},
+			wantErr:  true,
+		},
+		{
+			name:     "s3 without a bucket stops startup",
+			httpMode: true,
+			env:      map[string]string{"INDEX_STORE": "s3"},
+			wantErr:  true,
+		},
+		{
+			name:     "bad index config stops stdio too",
+			httpMode: false,
+			env:      map[string]string{"INDEX_STORE": "nope"},
+			wantErr:  true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

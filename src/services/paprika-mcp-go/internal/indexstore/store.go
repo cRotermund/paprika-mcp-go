@@ -107,7 +107,12 @@ func decode(data []byte, version int) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("%w: missing version or payload", ErrCorrupt)
 	}
 	if env.Version != version {
-		return Snapshot{}, fmt.Errorf("%w: found %d, want %d", ErrVersionMismatch, env.Version, version)
+		return Snapshot{}, fmt.Errorf(
+			"%w: found %d, want %d",
+			ErrVersionMismatch,
+			env.Version,
+			version,
+		)
 	}
 	return Snapshot{Version: env.Version, SavedAt: env.SavedAt, Payload: env.Payload}, nil
 }

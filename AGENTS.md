@@ -58,6 +58,8 @@ Reference [`.editorconfig`](.editorconfig) at all times:
 - **Go:** tabs, indent 4, LF line endings. Follow standard Go conventions
   (`gofmt`, grouped imports: stdlib, third-party, internal). Use the standard
   `testing` package and prefer table-driven tests.
+- **Long lists:** parameter, argument, and field lists get one item per line
+  (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 - **YAML/JSON:** spaces, indent 2, LF.
 - **All files:** no trailing whitespace, end with a final newline, no
   commented-out code.

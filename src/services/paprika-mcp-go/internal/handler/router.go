@@ -61,7 +61,10 @@ type Options struct {
 // is read.
 func NewRouter(opts Options) http.Handler {
 	if opts.FailedAuthLimiter == nil {
-		opts.FailedAuthLimiter = middleware.NewFailureLimiter(DefaultFailedAuthMax, DefaultFailedAuthWindow)
+		opts.FailedAuthLimiter = middleware.NewFailureLimiter(
+			DefaultFailedAuthMax,
+			DefaultFailedAuthWindow,
+		)
 	}
 	if opts.GlobalLimiter == nil {
 		opts.GlobalLimiter = middleware.NewTokenBucket(DefaultGlobalRatePerSec, DefaultGlobalBurst)
@@ -83,11 +86,13 @@ func NewRouter(opts Options) http.Handler {
 			Stateless:           true,
 			JSONResponse:        true,
 			MaxRequestBodyBytes: opts.MaxBodyBytes,
-		})
+		},
+	)
 
 	authenticate := sdkauth.RequireBearerToken(opts.Verifier, nil)
 
-	protected := chain(mcpHandler,
+	protected := chain(
+		mcpHandler,
 		middleware.Origin(opts.Logger, opts.AllowedOrigins),
 		middleware.FailedAuthLimit(opts.Logger, opts.FailedAuthLimiter),
 		authenticate,

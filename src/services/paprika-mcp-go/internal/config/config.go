@@ -148,7 +148,13 @@ func requiredInt(name string, logger *slog.Logger) (int, error) {
 
 	value, err := strconv.Atoi(raw)
 	if err != nil {
-		logger.Error("could not parse environment variable as an integer", "name", name, "value", raw)
+		logger.Error(
+			"could not parse environment variable as an integer",
+			"name",
+			name,
+			"value",
+			raw,
+		)
 		return 0, fmt.Errorf("environment variable %s is not an integer: %w", name, err)
 	}
 

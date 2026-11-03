@@ -74,14 +74,20 @@ func (c Config) validate() error {
 	case ModeNone:
 	case ModeFilesystem:
 		if c.FilePath == "" {
-			return fmt.Errorf("indexstore: INDEX_FILE_PATH is required when INDEX_STORE=%s", ModeFilesystem)
+			return fmt.Errorf(
+				"indexstore: INDEX_FILE_PATH is required when INDEX_STORE=%s",
+				ModeFilesystem,
+			)
 		}
 	case ModeS3:
 		if c.S3Bucket == "" {
 			return fmt.Errorf("indexstore: INDEX_S3_BUCKET is required when INDEX_STORE=%s", ModeS3)
 		}
 	default:
-		return fmt.Errorf("indexstore: unknown INDEX_STORE %q (want none, filesystem, or s3)", string(c.Mode))
+		return fmt.Errorf(
+			"indexstore: unknown INDEX_STORE %q (want none, filesystem, or s3)",
+			string(c.Mode),
+		)
 	}
 	return nil
 }

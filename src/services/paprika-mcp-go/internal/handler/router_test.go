@@ -33,14 +33,20 @@ type harness struct {
 func newHarness(t *testing.T, mutate func(*Options)) *harness {
 	t.Helper()
 
-	verifier, err := auth.NewVerifier([]string{auth.HashToken(currentToken), auth.HashToken(nextToken)})
+	verifier, err := auth.NewVerifier([]string{
+		auth.HashToken(currentToken),
+		auth.HashToken(nextToken),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	logs := &bytes.Buffer{}
 	opts := Options{
-		Logger:         slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Logger: slog.New(slog.NewJSONHandler(
+			logs,
+			&slog.HandlerOptions{Level: slog.LevelDebug},
+		)),
 		MCPServer:      mcpserver.New(nil, mcpserver.Options{}), // only ping is called here
 		Verifier:       verifier.Verify,
 		AllowedOrigins: []string{"https://claude.ai"},
@@ -110,10 +116,26 @@ func TestAuthentication(t *testing.T) {
 		{name: "wrong token", headers: bearer("wrong"), want: http.StatusUnauthorized},
 		{name: "current token", headers: bearer(currentToken), want: http.StatusOK},
 		{name: "rotated second hash", headers: bearer(nextToken), want: http.StatusOK},
-		{name: "malformed scheme", headers: map[string]string{"Authorization": "Basic " + currentToken}, want: http.StatusUnauthorized},
-		{name: "no scheme", headers: map[string]string{"Authorization": currentToken}, want: http.StatusUnauthorized},
-		{name: "extra fields", headers: map[string]string{"Authorization": "Bearer " + currentToken + " extra"}, want: http.StatusUnauthorized},
-		{name: "empty bearer", headers: map[string]string{"Authorization": "Bearer "}, want: http.StatusUnauthorized},
+		{
+			name:    "malformed scheme",
+			headers: map[string]string{"Authorization": "Basic " + currentToken},
+			want:    http.StatusUnauthorized,
+		},
+		{
+			name:    "no scheme",
+			headers: map[string]string{"Authorization": currentToken},
+			want:    http.StatusUnauthorized,
+		},
+		{
+			name:    "extra fields",
+			headers: map[string]string{"Authorization": "Bearer " + currentToken + " extra"},
+			want:    http.StatusUnauthorized,
+		},
+		{
+			name:    "empty bearer",
+			headers: map[string]string{"Authorization": "Bearer "},
+			want:    http.StatusUnauthorized,
+		},
 	}
 
 	for _, tt := range tests {
@@ -131,7 +153,11 @@ func TestAuthentication(t *testing.T) {
 func TestNoToolRunsUnauthenticated(t *testing.T) {
 	h := newHarness(t, nil)
 
-	for _, headers := range []map[string]string{nil, bearer("wrong"), {"Authorization": "garbage"}} {
+	for _, headers := range []map[string]string{
+		nil,
+		bearer("wrong"),
+		{"Authorization": "garbage"},
+	} {
 		code, body := h.do(t, request{body: pingBody, headers: headers})
 		if code != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", code)
@@ -157,10 +183,14 @@ func TestAuthenticatedPing(t *testing.T) {
 	defer cancel()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint:   h.server.URL + "/mcp",
-		HTTPClient: &http.Client{Transport: bearerTransport{token: currentToken}},
-	}, nil)
+	session, err := client.Connect(
+		ctx,
+		&mcp.StreamableClientTransport{
+			Endpoint:   h.server.URL + "/mcp",
+			HTTPClient: &http.Client{Transport: bearerTransport{token: currentToken}},
+		},
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -228,18 +258,27 @@ func TestFailedAuthRateLimit(t *testing.T) {
 	guesser := map[string]string{"Authorization": "Bearer guess", "X-Forwarded-For": "198.51.100.9"}
 
 	for i := range 3 {
-		if got, _ := h.do(t, request{body: initBody, headers: guesser}); got != http.StatusUnauthorized {
+		if got, _ := h.do(
+			t,
+			request{body: initBody, headers: guesser},
+		); got != http.StatusUnauthorized {
 			t.Fatalf("guess %d: status = %d, want 401", i+1, got)
 		}
 	}
 
-	if got, _ := h.do(t, request{body: initBody, headers: guesser}); got != http.StatusTooManyRequests {
+	if got, _ := h.do(
+		t,
+		request{body: initBody, headers: guesser},
+	); got != http.StatusTooManyRequests {
 		t.Errorf("after limit: status = %d, want 429", got)
 	}
 
 	correct := bearer(currentToken)
 	correct["X-Forwarded-For"] = "198.51.100.9"
-	if got, _ := h.do(t, request{body: initBody, headers: correct}); got != http.StatusTooManyRequests {
+	if got, _ := h.do(
+		t,
+		request{body: initBody, headers: correct},
+	); got != http.StatusTooManyRequests {
 		t.Errorf("blocked IP with a correct token: status = %d, want 429", got)
 	}
 
@@ -249,7 +288,10 @@ func TestFailedAuthRateLimit(t *testing.T) {
 	}
 
 	logged := h.logs.String()
-	if !strings.Contains(logged, `"client_ip":"198.51.100.9"`) || !strings.Contains(logged, "authentication failed") {
+	if !strings.Contains(
+		logged,
+		`"client_ip":"198.51.100.9"`,
+	) || !strings.Contains(logged, "authentication failed") {
 		t.Errorf("failed auth was not logged with the client IP: %s", logged)
 	}
 }
@@ -260,11 +302,17 @@ func TestGlobalRateLimit(t *testing.T) {
 	})
 
 	for i := range 2 {
-		if got, _ := h.do(t, request{body: initBody, headers: bearer(currentToken)}); got != http.StatusOK {
+		if got, _ := h.do(
+			t,
+			request{body: initBody, headers: bearer(currentToken)},
+		); got != http.StatusOK {
 			t.Fatalf("request %d: status = %d, want 200", i+1, got)
 		}
 	}
-	if got, _ := h.do(t, request{body: initBody, headers: bearer(currentToken)}); got != http.StatusTooManyRequests {
+	if got, _ := h.do(
+		t,
+		request{body: initBody, headers: bearer(currentToken)},
+	); got != http.StatusTooManyRequests {
 		t.Errorf("over burst: status = %d, want 429", got)
 	}
 }
@@ -279,7 +327,10 @@ func TestUnauthenticatedRequestsDoNotUseGlobalLimit(t *testing.T) {
 		h.do(t, request{body: initBody})
 	}
 
-	if got, _ := h.do(t, request{body: initBody, headers: bearer(currentToken)}); got != http.StatusOK {
+	if got, _ := h.do(
+		t,
+		request{body: initBody, headers: bearer(currentToken)},
+	); got != http.StatusOK {
 		t.Errorf("authenticated request: status = %d, want 200", got)
 	}
 }
@@ -292,12 +343,32 @@ func TestRoutes(t *testing.T) {
 		req  request
 		want int
 	}{
-		{name: "health needs no auth", req: request{method: http.MethodGet, path: "/health"}, want: http.StatusOK},
+		{
+			name: "health needs no auth",
+			req:  request{method: http.MethodGet, path: "/health"},
+			want: http.StatusOK,
+		},
 		{name: "root", req: request{method: http.MethodGet, path: "/"}, want: http.StatusNotFound},
-		{name: "unknown path", req: request{method: http.MethodGet, path: "/admin"}, want: http.StatusNotFound},
-		{name: "unknown path with token", req: request{path: "/other", headers: bearer(currentToken)}, want: http.StatusNotFound},
-		{name: "mcp subpath", req: request{path: "/mcp/extra", headers: bearer(currentToken)}, want: http.StatusNotFound},
-		{name: "metrics", req: request{method: http.MethodGet, path: "/metrics"}, want: http.StatusNotFound},
+		{
+			name: "unknown path",
+			req:  request{method: http.MethodGet, path: "/admin"},
+			want: http.StatusNotFound,
+		},
+		{
+			name: "unknown path with token",
+			req:  request{path: "/other", headers: bearer(currentToken)},
+			want: http.StatusNotFound,
+		},
+		{
+			name: "mcp subpath",
+			req:  request{path: "/mcp/extra", headers: bearer(currentToken)},
+			want: http.StatusNotFound,
+		},
+		{
+			name: "metrics",
+			req:  request{method: http.MethodGet, path: "/metrics"},
+			want: http.StatusNotFound,
+		},
 	}
 
 	for _, tt := range tests {
@@ -320,11 +391,23 @@ func TestTokensNeverAppearInLogs(t *testing.T) {
 	secrets := []string{"guessed-token-xyz", currentToken, nextToken}
 
 	h.do(t, request{body: initBody, headers: bearer(secrets[0])})
-	h.do(t, request{body: initBody, headers: map[string]string{"Authorization": "Basic " + secrets[0]}})
+	h.do(
+		t,
+		request{body: initBody, headers: map[string]string{"Authorization": "Basic " + secrets[0]}},
+	)
 	h.do(t, request{body: initBody, headers: bearer(secrets[0])})
 	h.do(t, request{body: initBody, headers: bearer(currentToken)})
 	h.do(t, request{body: initBody, headers: bearer(nextToken)})
-	h.do(t, request{body: initBody, headers: map[string]string{"Authorization": "Bearer " + secrets[0], "Origin": "https://evil.example"}})
+	h.do(
+		t,
+		request{
+			body: initBody,
+			headers: map[string]string{
+				"Authorization": "Bearer " + secrets[0],
+				"Origin":        "https://evil.example",
+			},
+		},
+	)
 
 	logged := h.logs.String()
 	if logged == "" {

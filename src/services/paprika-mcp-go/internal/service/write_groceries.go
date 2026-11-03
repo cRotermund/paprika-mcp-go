@@ -41,7 +41,11 @@ type AddGroceryItemsResult struct {
 
 // AddGroceryItems adds items to a list (the default list when list is empty)
 // in one POST. Items whose aisle cannot be resolved are reported and skipped.
-func (s *Service) AddGroceryItems(ctx context.Context, list string, items []GroceryItemInput) (AddGroceryItemsResult, error) {
+func (s *Service) AddGroceryItems(
+	ctx context.Context,
+	list string,
+	items []GroceryItemInput,
+) (AddGroceryItemsResult, error) {
 	const tool = "add_grocery_items"
 	if err := checkBatch("items", len(items)); err != nil {
 		return AddGroceryItemsResult{}, err
@@ -53,8 +57,13 @@ func (s *Service) AddGroceryItems(ctx context.Context, list string, items []Groc
 		if strings.TrimSpace(it.Text) == "" {
 			return AddGroceryItemsResult{}, invalid("Item %d: text is required.", i)
 		}
-		for field, v := range map[string]string{"text": it.Text, "quantity": it.Quantity, "instruction": it.Instruction,
-			"ingredient": it.Ingredient, "aisle": it.Aisle} {
+		for field, v := range map[string]string{
+			"text":        it.Text,
+			"quantity":    it.Quantity,
+			"instruction": it.Instruction,
+			"ingredient":  it.Ingredient,
+			"aisle":       it.Aisle,
+		} {
 			if err := checkText(field, v, maxShortLen); err != nil {
 				return AddGroceryItemsResult{}, invalid("Item %d: %s", i, err.Error())
 			}
@@ -125,19 +134,45 @@ func (s *Service) AddGroceryItems(ctx context.Context, list string, items []Groc
 		mustSet(o, "aisle_uid", aisle.UID)
 		mustSet(o, "list_uid", target.UID)
 		objects = append(objects, o)
-		changes = append(changes, change{uid: uid, fields: []string{"name", "ingredient", "instruction", "quantity", "aisle", "aisle_uid", "list_uid"}})
+		changes = append(
+			changes,
+			change{
+				uid: uid,
+				fields: []string{
+					"name",
+					"ingredient",
+					"instruction",
+					"quantity",
+					"aisle",
+					"aisle_uid",
+					"list_uid",
+				},
+			},
+		)
 		results[i].Item = groceryItemSummary(o, "")
 	}
 	if len(objects) == 0 {
 		return AddGroceryItemsResult{}, batchFailure(failures)
 	}
 
-	warning, err := s.commit(ctx, tool, resGroceryItem, changes, func(c context.Context) error { return s.w.SaveGroceryItems(c, objects) })
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resGroceryItem,
+		changes,
+		func(c context.Context) error { return s.w.SaveGroceryItems(c, objects) },
+	)
 	if err != nil {
 		return AddGroceryItemsResult{}, err
 	}
 	s.cache.Invalidate(caching.ResourceGroceries)
-	return AddGroceryItemsResult{ListUID: target.UID, ListName: target.Name, Items: results, Added: len(objects), Warning: warning}, nil
+	return AddGroceryItemsResult{
+		ListUID:  target.UID,
+		ListName: target.Name,
+		Items:    results,
+		Added:    len(objects),
+		Warning:  warning,
+	}, nil
 }
 
 // aisleResolver picks the aisle for a new item: the given aisle name, then the
@@ -159,7 +194,10 @@ func newAisleResolver(entries []paprikaclient.Entry[paprikaclient.GroceryAisle])
 	for _, e := range entries {
 		r.aisles = append(r.aisles, e.Value)
 	}
-	slices.SortStableFunc(r.aisles, func(a, b paprikaclient.GroceryAisle) int { return a.OrderFlag - b.OrderFlag })
+	slices.SortStableFunc(
+		r.aisles,
+		func(a, b paprikaclient.GroceryAisle) int { return a.OrderFlag - b.OrderFlag },
+	)
 	for _, a := range r.aisles {
 		key := strings.ToLower(strings.TrimSpace(a.Name))
 		if _, dup := r.byName[key]; !dup {
@@ -203,7 +241,10 @@ func (r *aisleResolver) resolve(given, ingredient string) (paprikaclient.Grocery
 		if a, ok := r.byUID[given]; ok {
 			return a, nil
 		}
-		return paprikaclient.GroceryAisle{}, notFound("Unknown aisle %q. Call list_grocery_aisles for the valid names.", given)
+		return paprikaclient.GroceryAisle{}, notFound(
+			"Unknown aisle %q. Call list_grocery_aisles for the valid names.",
+			given,
+		)
 	}
 	if uid, ok := r.remember[strings.ToLower(strings.TrimSpace(ingredient))]; ok {
 		if a, ok := r.byUID[uid]; ok {
@@ -227,8 +268,14 @@ func groceryItemSummary(o paprikaclient.Object, aisleName string) GroceryItemSum
 	if aisle == "" {
 		aisle = aisleName
 	}
-	return GroceryItemSummary{UID: g.UID, Name: g.Name, Quantity: g.Quantity, Instruction: g.Instruction,
-		Aisle: aisle, Purchased: g.Purchased}
+	return GroceryItemSummary{
+		UID:         g.UID,
+		Name:        g.Name,
+		Quantity:    g.Quantity,
+		Instruction: g.Instruction,
+		Aisle:       aisle,
+		Purchased:   g.Purchased,
+	}
 }
 
 // GroceryChanges holds the changes for UpdateGroceryItem. A nil field is left
@@ -250,7 +297,11 @@ type GroceryItemWrite struct {
 
 // UpdateGroceryItem renames an item, moves it to another aisle, or checks it
 // off or back on.
-func (s *Service) UpdateGroceryItem(ctx context.Context, uid string, c GroceryChanges) (GroceryItemWrite, error) {
+func (s *Service) UpdateGroceryItem(
+	ctx context.Context,
+	uid string,
+	c GroceryChanges,
+) (GroceryItemWrite, error) {
 	const tool = "update_grocery_item"
 	uid, err := requireText("uid", uid, maxRefLen)
 	if err != nil {
@@ -316,14 +367,24 @@ func (s *Service) UpdateGroceryItem(ctx context.Context, uid string, c GroceryCh
 		return GroceryItemWrite{Item: groceryItemSummary(o, ""), NoChange: true}, nil
 	}
 	mustSet(o, "deleted", false)
-	warning, err := s.commit(ctx, tool, resGroceryItem, []change{{uid: uid, fields: changed}}, func(c context.Context) error {
-		return s.w.SaveGroceryItems(c, []paprikaclient.Object{o})
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resGroceryItem,
+		[]change{{uid: uid, fields: changed}},
+		func(c context.Context) error {
+			return s.w.SaveGroceryItems(c, []paprikaclient.Object{o})
+		},
+	)
 	if err != nil {
 		return GroceryItemWrite{}, err
 	}
 	s.cache.Invalidate(caching.ResourceGroceries)
-	return GroceryItemWrite{Item: groceryItemSummary(o, ""), Changed: changed, Warning: warning}, nil
+	return GroceryItemWrite{
+		Item:    groceryItemSummary(o, ""),
+		Changed: changed,
+		Warning: warning,
+	}, nil
 }
 
 // DeleteGroceryItem removes an item from its list.
@@ -345,9 +406,15 @@ func (s *Service) DeleteGroceryItem(ctx context.Context, uid string) (DeleteResu
 	}
 	before := ObjectMap(o)
 	mustSet(o, "deleted", true)
-	warning, err := s.commit(ctx, tool, resGroceryItem, []change{{uid: uid, fields: []string{"deleted"}}}, func(c context.Context) error {
-		return s.w.SaveGroceryItems(c, []paprikaclient.Object{o})
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resGroceryItem,
+		[]change{{uid: uid, fields: []string{"deleted"}}},
+		func(c context.Context) error {
+			return s.w.SaveGroceryItems(c, []paprikaclient.Object{o})
+		},
+	)
 	if err != nil {
 		return DeleteResult{}, err
 	}
@@ -357,7 +424,10 @@ func (s *Service) DeleteGroceryItem(ctx context.Context, uid string) (DeleteResu
 
 // readGroceryItem reads the current items from the API and returns a copy of
 // one raw item.
-func (s *Service) readGroceryItem(ctx context.Context, tool, uid string) (paprikaclient.Object, error) {
+func (s *Service) readGroceryItem(
+	ctx context.Context,
+	tool, uid string,
+) (paprikaclient.Object, error) {
 	items, err := s.w.Groceries(ctx)
 	if err != nil {
 		return nil, s.mapError(tool, err)
@@ -367,7 +437,10 @@ func (s *Service) readGroceryItem(ctx context.Context, tool, uid string) (paprik
 			return it.Raw.Clone(), nil
 		}
 	}
-	return nil, notFound("No grocery item has the uid %q. Use list_grocery_items to find a valid uid.", uid)
+	return nil, notFound(
+		"No grocery item has the uid %q. Use list_grocery_items to find a valid uid.",
+		uid,
+	)
 }
 
 // GroceryListWrite is the result of creating a grocery list.
@@ -396,7 +469,11 @@ func (s *Service) CreateGroceryList(ctx context.Context, name string) (GroceryLi
 	order := 0
 	for _, l := range lists {
 		if strings.EqualFold(strings.TrimSpace(l.Value.Name), name) {
-			return GroceryListWrite{}, invalid("A grocery list named %q already exists (uid %s). Use it, or pick another name.", l.Value.Name, l.Value.UID)
+			return GroceryListWrite{}, invalid(
+				"A grocery list named %q already exists (uid %s). Use it, or pick another name.",
+				l.Value.Name,
+				l.Value.UID,
+			)
 		}
 		order = max(order, l.Value.OrderFlag+1)
 	}
@@ -408,9 +485,18 @@ func (s *Service) CreateGroceryList(ctx context.Context, name string) (GroceryLi
 	mustSet(o, "order_flag", order)
 	mustSet(o, "is_default", false)
 	mustSet(o, "reminders_list", "Paprika") // what the official client sends for a new list
-	warning, err := s.commit(ctx, tool, resGroceryList, []change{{uid: uid, fields: []string{"name", "order_flag", "is_default", "reminders_list"}}}, func(c context.Context) error {
-		return s.w.SaveGroceryLists(c, []paprikaclient.Object{o})
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resGroceryList,
+		[]change{{
+			uid:    uid,
+			fields: []string{"name", "order_flag", "is_default", "reminders_list"},
+		}},
+		func(c context.Context) error {
+			return s.w.SaveGroceryLists(c, []paprikaclient.Object{o})
+		},
+	)
 	if err != nil {
 		return GroceryListWrite{}, err
 	}
@@ -441,7 +527,10 @@ func (s *Service) DeleteGroceryList(ctx context.Context, list string) (DeleteRes
 		return DeleteResult{}, err
 	}
 	if target.IsDefault {
-		return DeleteResult{}, invalid("%q is the default grocery list and cannot be deleted.", target.Name)
+		return DeleteResult{}, invalid(
+			"%q is the default grocery list and cannot be deleted.",
+			target.Name,
+		)
 	}
 	items, err := s.w.Groceries(ctx)
 	if err != nil {
@@ -454,7 +543,11 @@ func (s *Service) DeleteGroceryList(ctx context.Context, list string) (DeleteRes
 		}
 	}
 	if count > 0 {
-		return DeleteResult{}, invalid("The grocery list %q still has %d item(s). Delete or move them first; only empty lists can be deleted.", target.Name, count)
+		return DeleteResult{}, invalid(
+			"The grocery list %q still has %d item(s). Delete or move them first; only empty lists can be deleted.",
+			target.Name,
+			count,
+		)
 	}
 	var raw paprikaclient.Object
 	for _, l := range lists {
@@ -464,9 +557,15 @@ func (s *Service) DeleteGroceryList(ctx context.Context, list string) (DeleteRes
 	}
 	before := ObjectMap(raw)
 	mustSet(raw, "deleted", true)
-	warning, err := s.commit(ctx, tool, resGroceryList, []change{{uid: target.UID, fields: []string{"deleted"}}}, func(c context.Context) error {
-		return s.w.SaveGroceryLists(c, []paprikaclient.Object{raw})
-	})
+	warning, err := s.commit(
+		ctx,
+		tool,
+		resGroceryList,
+		[]change{{uid: target.UID, fields: []string{"deleted"}}},
+		func(c context.Context) error {
+			return s.w.SaveGroceryLists(c, []paprikaclient.Object{raw})
+		},
+	)
 	if err != nil {
 		return DeleteResult{}, err
 	}
