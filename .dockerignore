@@ -20,3 +20,6 @@ tests
 **/*.exe
 **/*.test
 **/*.out
+
+# Local recipe index snapshots: they hold recipe names and ingredients.
+**/*recipe-index.json.gz
