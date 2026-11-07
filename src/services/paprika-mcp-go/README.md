@@ -30,7 +30,8 @@ variables take precedence over `.env`.
 | `PAPRIKA_REQUEST_BURST` | no | Positive integer, default `4`, and above the background reserve of 2. The bucket's size. Paprika tolerates bursts poorly after recent activity, so keep it small. Bad values stop startup. |
 | `INDEX_STORE` | no | Where to keep the recipe index snapshot: `none` (default), `filesystem`, or `s3`. An unknown mode, or a mode missing its settings, stops startup. |
 | `INDEX_FILE_PATH` | `filesystem` | Snapshot file path, on a writable volume. |
-| `INDEX_S3_BUCKET`, `INDEX_S3_KEY`, `INDEX_S3_ENDPOINT` | `s3` | Bucket (required), object key (default `paprika-mcp-go/recipe-index.json.gz`), and an endpoint override for an S3 emulator. AWS credentials and region come from the SDK's default chain. |
+| `INDEX_S3_BUCKET`, `INDEX_S3_KEY`, `INDEX_S3_ENDPOINT` | `s3` | Bucket (required), object key (default `paprika-mcp-go/recipe-index.json.gz`), and an endpoint override for an S3 emulator. |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_PROFILE` | `s3` | Read by the AWS SDK's default chain. `AWS_REGION` is required, except with `INDEX_S3_ENDPOINT`, which falls back to `us-east-1`. The keys are secrets; leave them unset when a profile, an EKS role, or an instance role supplies credentials. |
 
 ## Routes
 
