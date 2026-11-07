@@ -16,8 +16,8 @@ import (
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
 )
 
-// limitedClient returns a client with the sliding-window limiter on (the
-// defaults: 10 starts per 12 s) and a fake clock that sleeping advances.
+// limitedClient returns a client with the token bucket on (the defaults: 50 a
+// minute, burst 4) and a fake clock that sleeping advances.
 func limitedClient(
 	t *testing.T,
 	f *fakepaprika.Server,
@@ -26,35 +26,37 @@ func limitedClient(
 	t.Helper()
 	sc := newStepClock()
 	c, _ := newTestClient(t, f, func(cfg *Config) {
-		cfg.RequestLimit = DefaultRequestLimit
-		cfg.RequestWindow = DefaultRequestWindow
+		cfg.RequestsPerMinute = DefaultRequestsPerMinute
+		cfg.RequestBurst = DefaultRequestBurst
 		cfg.Now = func() time.Time { return sc.now }
 		if mutate != nil {
 			mutate(cfg)
 		}
 	})
-	c.limiter.clock = sc.clock()
+	c.bucket.clock = sc.clock()
 	return c, sc
 }
 
-func TestNewRejectsLimitAtOrBelowReserve(t *testing.T) {
+func TestNewRejectsBurstAtOrBelowReserve(t *testing.T) {
 	tests := []struct {
 		name    string
-		limit   int
+		perMin  int
+		burst   int
 		wantErr bool
 	}{
-		{"limit equal to the reserve", BackgroundReserve, true},
-		{"limit below the reserve", 1, true},
-		{"limit above the reserve", BackgroundReserve + 1, false},
-		{"limiting off ignores the limit", -1, false},
-		{"defaults", 0, false},
+		{"burst equal to the reserve", 50, BackgroundReserve, true},
+		{"burst below the reserve", 50, 1, true},
+		{"burst above the reserve", 50, BackgroundReserve + 1, false},
+		{"limiting off ignores the burst", -1, 1, false},
+		{"defaults", 0, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := New(Config{
-				Email:        "e",
-				Password:     "p",
-				RequestLimit: tt.limit,
+				Email:             "e",
+				Password:          "p",
+				RequestsPerMinute: tt.perMin,
+				RequestBurst:      tt.burst,
 			})
 			if tt.wantErr != errors.Is(err, ErrInvalidArgument) {
 				t.Fatalf("error = %v, want invalid argument = %v", err, tt.wantErr)
@@ -63,10 +65,32 @@ func TestNewRejectsLimitAtOrBelowReserve(t *testing.T) {
 	}
 }
 
-func TestLoginsAndRequestsShareTheWindow(t *testing.T) {
+func TestDefaultsAreFiftyPerMinuteWithBurstFour(t *testing.T) {
+	if DefaultRequestsPerMinute != 50 || DefaultRequestBurst != 4 {
+		t.Fatalf(
+			"defaults = %d/%d, want 50/4",
+			DefaultRequestsPerMinute,
+			DefaultRequestBurst,
+		)
+	}
+	c, err := New(Config{Email: "e", Password: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.cfg.RequestsPerMinute != 50 || c.cfg.RequestBurst != 4 || c.bucket == nil {
+		t.Fatalf(
+			"client limits = %d/%d, want 50/4 with a bucket",
+			c.cfg.RequestsPerMinute,
+			c.cfg.RequestBurst,
+		)
+	}
+}
+
+func TestLoginsAndRequestsShareTheBurst(t *testing.T) {
 	f := newFake(t)
 	c, sc := limitedClient(t, f, nil)
-	// One login and nine reads make ten starts: the whole limit, with no wait.
+	// One login and nine reads make ten requests against a burst of four, so
+	// six wait one interval (1.2 s at 50 a minute) each.
 	for range 9 {
 		if _, err := c.Status(context.Background()); err != nil {
 			t.Fatal(err)
@@ -75,16 +99,8 @@ func TestLoginsAndRequestsShareTheWindow(t *testing.T) {
 	if got := len(f.Requests()); got != 10 {
 		t.Fatalf("requests = %d, want 10", got)
 	}
-	if len(sc.slept) != 0 {
-		t.Fatalf("the first ten requests waited: %v", sc.slept)
-	}
-
-	// The eleventh waits until the login leaves the window.
-	if _, err := c.Status(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if got := sc.total(); got != DefaultRequestWindow {
-		t.Fatalf("waited %s, want the 12s window", got)
+	if got := sc.total(); got != 6*1200*time.Millisecond {
+		t.Fatalf("waited %s, want 7.2s for the six requests past the burst", got)
 	}
 }
 
@@ -93,12 +109,10 @@ func TestBackgroundStopsAtTheReserve(t *testing.T) {
 	c, sc := limitedClient(t, f, nil)
 	bg := Background(context.Background())
 
-	// The login is one of 10 starts; background requests may start until only
-	// the reserve is left, which is seven more.
-	for i := range 7 {
-		if _, err := c.Status(bg); err != nil {
-			t.Fatalf("background request %d: %v", i+1, err)
-		}
+	// The login takes 1 of 4 tokens; a background request may take a token
+	// only while the reserve of 2 would remain, which allows one more.
+	if _, err := c.Status(bg); err != nil {
+		t.Fatalf("background request: %v", err)
 	}
 	if len(sc.slept) != 0 {
 		t.Fatalf("background requests waited before the reserve: %v", sc.slept)
@@ -110,13 +124,13 @@ func TestBackgroundStopsAtTheReserve(t *testing.T) {
 		cancel()
 		return ctx.Err()
 	}
-	c.limiter.clock = clock
+	c.bucket.clock = clock
 	before := len(f.Requests())
 	if _, err := c.Status(blocked); !errors.Is(err, context.Canceled) {
 		t.Fatalf("background error = %v, want it held until canceled", err)
 	}
 
-	c.limiter.clock = sc.clock()
+	c.bucket.clock = sc.clock()
 	for range BackgroundReserve {
 		if _, err := c.Status(context.Background()); err != nil {
 			t.Fatalf("interactive request with the reserve left: %v", err)
@@ -147,7 +161,19 @@ func logRecords(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	return out
 }
 
-func TestTimeoutHoldsTheLimiterAndDelaysNextRequest(t *testing.T) {
+// stallRecord returns the stall warning from the logs.
+func stallRecord(t *testing.T, logs *bytes.Buffer) map[string]any {
+	t.Helper()
+	for _, rec := range logRecords(t, logs) {
+		if strings.Contains(rec["msg"].(string), "stalled") {
+			return rec
+		}
+	}
+	t.Fatalf("no stall warning in the logs:\n%s", logs.String())
+	return nil
+}
+
+func TestTimeoutEmptiesBucketAndDelaysNextRequest(t *testing.T) {
 	f := newFake(t)
 	const password = "hunter2-very-secret"
 	f.SetPassword(password)
@@ -180,25 +206,17 @@ func TestTimeoutHoldsTheLimiterAndDelaysNextRequest(t *testing.T) {
 		t.Fatalf("next request waited %s, want the 90s cooldown", got)
 	}
 
-	var stall map[string]any
-	for _, rec := range logRecords(t, &logs) {
-		if strings.Contains(rec["msg"].(string), "stalled") {
-			stall = rec
-		}
-	}
-	if stall == nil {
-		t.Fatalf("no stall warning in the logs:\n%s", logs.String())
-	}
+	stall := stallRecord(t, &logs)
 	want := map[string]any{
-		"level":              "WARN",
-		"requests_in_window": float64(2),
-		"request_limit":      float64(DefaultRequestLimit),
-		"request_window":     float64(DefaultRequestWindow),
-		"method":             "GET",
-		"path":               statusPath,
-		"cooldown":           float64(90 * time.Second),
-		"reused":             true,
-		"conn_requests":      float64(2),
+		"level":               "WARN",
+		"requests_last_12s":   float64(2),
+		"requests_per_minute": float64(DefaultRequestsPerMinute),
+		"burst":               float64(DefaultRequestBurst),
+		"method":              "GET",
+		"path":                statusPath,
+		"cooldown":            float64(90 * time.Second),
+		"reused":              true,
+		"conn_requests":       float64(2),
 	}
 	for k, v := range want {
 		if stall[k] != v {
@@ -214,6 +232,67 @@ func TestTimeoutHoldsTheLimiterAndDelaysNextRequest(t *testing.T) {
 		if strings.Contains(logs.String(), secret) {
 			t.Errorf("logs contain %q:\n%s", secret, logs.String())
 		}
+	}
+}
+
+// clockJump is a transport that moves the fake clock forward when a request
+// for path is sent, standing in for the 20 s a stalled request spends waiting.
+type clockJump struct {
+	sc    *stepClock
+	armed *bool
+	path  string
+	by    time.Duration
+}
+
+func (j clockJump) RoundTrip(req *http.Request) (*http.Response, error) {
+	if *j.armed && strings.HasSuffix(req.URL.Path, j.path) {
+		j.sc.now = j.sc.now.Add(j.by)
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// TestStallCountIsTakenWhenTheRequestStarts checks requests_last_12s: it counts
+// the requests that started in the 12 s up to and including the stalled one,
+// measured when it started. A login and four reads, then a stalled read, give
+// 6. The clock jumps 20 s while the stalled request waits, so a count taken
+// when the timeout fires would show 0 or 1.
+func TestStallCountIsTakenWhenTheRequestStarts(t *testing.T) {
+	f := newFake(t)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	sc := newStepClock()
+	armed := false
+	c, _ := newTestClient(t, f, func(cfg *Config) {
+		cfg.Logger = logger
+		cfg.RequestsPerMinute = 600
+		cfg.RequestBurst = 8
+		cfg.RequestTimeout = 30 * time.Millisecond
+		cfg.Now = func() time.Time { return sc.now }
+		cfg.HTTPClient = &http.Client{
+			Transport: clockJump{sc: sc, armed: &armed, path: statusPath, by: 20 * time.Second},
+		}
+	})
+	c.bucket.clock = sc.clock()
+	ctx := context.Background()
+	for range 4 {
+		if _, err := c.Status(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f.Inject(fakepaprika.Fault{
+		Path:  statusPath,
+		Kind:  fakepaprika.FaultDelay,
+		Delay: 300 * time.Millisecond,
+	})
+	armed = true
+	if _, err := c.Status(ctx); !errors.Is(err, ErrTemporary) {
+		t.Fatalf("error = %v, want ErrTemporary", err)
+	}
+
+	stall := stallRecord(t, &logs)
+	if stall["requests_last_12s"] != float64(6) {
+		t.Errorf("requests_last_12s = %v, want 6", stall["requests_last_12s"])
 	}
 }
 
@@ -241,7 +320,7 @@ func TestThreeTimeoutsStillPauseWithLimiting(t *testing.T) {
 		t.Fatalf("paused call: error = %v, want ErrTemporary", err)
 	}
 	if len(f.Requests()) != before || sc.total() != slept {
-		t.Fatal("a paused call must neither reach the server nor wait on the limiter")
+		t.Fatal("a paused call must neither reach the server nor take a token")
 	}
 
 	f.ClearFaults()
@@ -335,12 +414,12 @@ func TestTraceReportsNegotiatedHTTP2(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	c, err := New(Config{
-		BaseURL:      srv.URL,
-		Email:        "e",
-		Password:     "p",
-		HTTPClient:   srv.Client(),
-		Logger:       logger,
-		RequestLimit: -1,
+		BaseURL:           srv.URL,
+		Email:             "e",
+		Password:          "p",
+		HTTPClient:        srv.Client(),
+		Logger:            logger,
+		RequestsPerMinute: -1,
 	})
 	if err != nil {
 		t.Fatal(err)

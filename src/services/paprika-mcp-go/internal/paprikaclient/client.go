@@ -62,16 +62,15 @@ type Config struct {
 
 	// RequestTimeout bounds each request, including reading the body.
 	RequestTimeout time.Duration
-	// RequestLimit and RequestWindow set the sliding window every request
-	// starts within: at most RequestLimit starts in any trailing
-	// RequestWindow. They default to DefaultRequestLimit and
-	// DefaultRequestWindow. A negative RequestLimit disables limiting and the
-	// stall cooldown, which tests use. RequestLimit must exceed
+	// RequestsPerMinute and RequestBurst set the token bucket every request
+	// takes a token from. They default to DefaultRequestsPerMinute and
+	// DefaultRequestBurst. A negative RequestsPerMinute disables limiting and
+	// the stall cooldown, which tests use. RequestBurst must exceed
 	// BackgroundReserve.
-	RequestLimit  int
-	RequestWindow time.Duration
-	// StallCooldown is how long the next request waits after a timeout. It
-	// defaults to DefaultStallCooldown.
+	RequestsPerMinute int
+	RequestBurst      int
+	// StallCooldown is how long the next request waits after a timeout empties
+	// the bucket. It defaults to DefaultStallCooldown.
 	StallCooldown time.Duration
 	// LoginBackoffMin and LoginBackoffMax bound the exponential wait after
 	// rejected logins.
@@ -96,8 +95,10 @@ type Client struct {
 	log  *slog.Logger
 	gate chan struct{}
 
-	// limiter limits request starts, or only counts them when limiting is off.
-	limiter *limiter
+	// bucket limits request starts; nil when limiting is off.
+	bucket *bucket
+	// sent remembers recent request starts for the stall warning.
+	sent *requestLog
 	// conns counts requests per connection, for the connection trace.
 	conns *connCounts
 
@@ -134,15 +135,15 @@ func New(cfg Config) (*Client, error) {
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = DefaultRequestTimeout
 	}
-	if cfg.RequestLimit == 0 {
-		cfg.RequestLimit = DefaultRequestLimit
+	if cfg.RequestsPerMinute == 0 {
+		cfg.RequestsPerMinute = DefaultRequestsPerMinute
 	}
-	if cfg.RequestWindow <= 0 {
-		cfg.RequestWindow = DefaultRequestWindow
+	if cfg.RequestBurst == 0 {
+		cfg.RequestBurst = DefaultRequestBurst
 	}
-	if cfg.RequestLimit > 0 && cfg.RequestLimit <= BackgroundReserve {
+	if cfg.RequestsPerMinute > 0 && cfg.RequestBurst <= BackgroundReserve {
 		return nil, fmt.Errorf(
-			"%w: request limit must be greater than %d",
+			"%w: request burst must be greater than %d",
 			ErrInvalidArgument,
 			BackgroundReserve,
 		)
@@ -187,17 +188,20 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	c := &Client{
-		cfg:  cfg,
-		base: base,
-		http: httpClient,
-		log:  logger,
-		gate: make(chan struct{}, 1),
-		limiter: newLimiter(
-			cfg.RequestLimit,
-			cfg.RequestWindow,
-			limiterClock{now: cfg.Now},
-		),
+		cfg:   cfg,
+		base:  base,
+		http:  httpClient,
+		log:   logger,
+		gate:  make(chan struct{}, 1),
+		sent:  newRequestLog(StallSpan),
 		conns: newConnCounts(),
+	}
+	if cfg.RequestsPerMinute > 0 {
+		c.bucket = newBucket(
+			cfg.RequestsPerMinute,
+			cfg.RequestBurst,
+			bucketClock{now: cfg.Now},
+		)
 	}
 	return c, nil
 }
@@ -442,19 +446,20 @@ func decodeEnvelope(res *response, isWrite bool) (json.RawMessage, error) {
 }
 
 // send performs one rate-limited HTTP exchange. It does not interpret the
-// status. The limiter is consulted before the gate, so a background request
-// waiting for the reserve does not hold up interactive ones.
+// status. A token is taken before the gate, so a background request waiting
+// for the reserve does not hold up interactive ones.
 func (c *Client) send(ctx context.Context, r request) (*response, error) {
 	if err := c.checkPaused(); err != nil {
 		return nil, err
 	}
-	reserve := 0
-	if IsBackground(ctx) {
-		reserve = BackgroundReserve
-	}
-	stamped, err := c.limiter.Wait(ctx, reserve)
-	if err != nil {
-		return nil, err
+	if c.bucket != nil {
+		reserve := 0
+		if IsBackground(ctx) {
+			reserve = BackgroundReserve
+		}
+		if err := c.bucket.Wait(ctx, reserve); err != nil {
+			return nil, err
+		}
 	}
 	select {
 	case c.gate <- struct{}{}:
@@ -466,7 +471,9 @@ func (c *Client) send(ctx context.Context, r request) (*response, error) {
 	if err := c.checkPaused(); err != nil {
 		return nil, err
 	}
-	c.limiter.Restamp(stamped)
+	// The count for a stall warning is taken now, when the request starts, not
+	// when its timeout fires 20 s later. It includes this request.
+	startedInSpan := c.sent.Add(c.cfg.Now())
 
 	rctx, cancel := context.WithTimeout(ctx, c.cfg.RequestTimeout)
 	defer cancel()
@@ -494,7 +501,7 @@ func (c *Client) send(ctx context.Context, r request) (*response, error) {
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, c.transportFailure(ctx, r, trace, err)
+		return nil, c.transportFailure(ctx, r, trace, startedInSpan, err)
 	}
 	defer resp.Body.Close()
 	trace.setProto(resp.Proto)
@@ -505,7 +512,7 @@ func (c *Client) send(ctx context.Context, r request) (*response, error) {
 			c.noteResponse()
 			return nil, err
 		}
-		return nil, c.transportFailure(ctx, r, trace, err)
+		return nil, c.transportFailure(ctx, r, trace, startedInSpan, err)
 	}
 	c.noteResponse()
 	c.log.Debug(
@@ -541,23 +548,24 @@ func (c *Client) checkPaused() error {
 	return nil
 }
 
-// noteStall treats a timeout as a throttle signal: it closes the limiter until
-// the cooldown has passed, and logs what was sent just before and how the
-// connection looked. Nothing is sent to measure anything; the count is from the
-// client's own record of request starts.
-func (c *Client) noteStall(r request, trace *connTrace) {
-	if c.cfg.RequestLimit > 0 {
-		c.limiter.Hold(c.cfg.StallCooldown)
+// noteStall treats a timeout as a throttle signal: it empties the bucket so the
+// next request waits out the cooldown, and logs how many requests had started
+// by the time the stalled one did, and how the connection looked. Nothing is
+// sent to measure anything; the count is from the client's own record, taken
+// at request start (startedInSpan).
+func (c *Client) noteStall(r request, trace *connTrace, startedInSpan int) {
+	if c.bucket != nil {
+		c.bucket.Drain(c.cfg.StallCooldown)
 	}
 	c.log.Warn(
 		"paprika request stalled; treating it as throttling",
 		append([]any{
-			"requests_in_window",
-			c.limiter.Count(c.cfg.Now()),
-			"request_limit",
-			c.cfg.RequestLimit,
-			"request_window",
-			c.cfg.RequestWindow,
+			"requests_last_12s",
+			startedInSpan,
+			"requests_per_minute",
+			c.cfg.RequestsPerMinute,
+			"burst",
+			c.cfg.RequestBurst,
 			"method",
 			r.method,
 			"path",
@@ -580,6 +588,7 @@ func (c *Client) transportFailure(
 	ctx context.Context,
 	r request,
 	trace *connTrace,
+	startedInSpan int,
 	err error,
 ) error {
 	if ctx.Err() != nil {
@@ -597,7 +606,7 @@ func (c *Client) transportFailure(
 	cause := "request failed"
 	if timedOut {
 		cause = "request timed out"
-		c.noteStall(r, trace)
+		c.noteStall(r, trace, startedInSpan)
 		c.mu.Lock()
 		c.consecutiveTO++
 		if c.consecutiveTO >= c.cfg.TimeoutThreshold {

@@ -61,14 +61,14 @@ func newTestClient(
 	t.Helper()
 	clock := newFakeClock()
 	cfg := Config{
-		BaseURL:        f.URL(),
-		Email:          f.Email(),
-		Password:       f.Password(),
-		UserAgent:      "paprika-mcp-go/test",
-		Logger:         discardLogger(),
-		RequestTimeout: 5 * time.Second,
-		RequestLimit:   -1,
-		Now:            clock.Now,
+		BaseURL:           f.URL(),
+		Email:             f.Email(),
+		Password:          f.Password(),
+		UserAgent:         "paprika-mcp-go/test",
+		Logger:            discardLogger(),
+		RequestTimeout:    5 * time.Second,
+		RequestsPerMinute: -1,
+		Now:               clock.Now,
 	}
 	if mutate != nil {
 		mutate(&cfg)
