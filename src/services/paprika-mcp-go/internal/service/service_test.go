@@ -505,3 +505,34 @@ func TestStillLoadingError(t *testing.T) {
 		t.Errorf("GetRecipe while loading: %v", err)
 	}
 }
+
+func TestStillLoadingMessageShowsCumulativeProgress(t *testing.T) {
+	ctx := context.Background()
+	fake := fakepaprika.New(t)
+	seed(fake)
+	fake.Inject(fakepaprika.Fault{
+		Method:  "GET",
+		Path:    "/api/v2/sync/recipe/P3/",
+		Kind:    fakepaprika.FaultStatus,
+		Status:  500,
+		Message: "boom",
+	})
+	cache := caching.New(testsupport.Client(t, fake, nil), caching.Options{})
+	svc := service.New(cache, nil)
+	if err := cache.Sync(ctx); err == nil {
+		t.Fatal("expected the interrupted pass to fail")
+	}
+	p := cache.Progress()
+	if p.Ready || p.Indexed == 0 || p.Total != 10 {
+		t.Fatalf("progress = %+v, want a partial load of 10", p)
+	}
+
+	_, err := svc.SearchRecipes(ctx, service.SearchParams{Query: "soup"})
+	want := fmt.Sprintf(
+		"The recipe index is still loading: %d of 10 recipes read. Retry shortly.",
+		p.Indexed,
+	)
+	if err == nil || kind(t, err) != service.KindLoading || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to contain %q", err, want)
+	}
+}

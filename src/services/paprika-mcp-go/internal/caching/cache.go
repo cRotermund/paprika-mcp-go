@@ -69,24 +69,33 @@ type Options struct {
 
 // LoadingError means the recipe index is not ready for search yet.
 type LoadingError struct {
-	// Done and Total count the recipes read so far in the current pass.
-	// Total is zero until the recipe list has been read.
-	Done, Total int
+	// Indexed is the number of recipes in the latest Paprika list that are in
+	// the index at their current hash. Total is the size of that list, and is
+	// zero until the list has been read.
+	Indexed, Total int
 }
 
 func (e *LoadingError) Error() string {
 	if e.Total == 0 {
 		return "recipe index is still loading"
 	}
-	return fmt.Sprintf("recipe index is still loading (%d of %d recipes read)", e.Done, e.Total)
+	return fmt.Sprintf(
+		"recipe index is still loading (%d of %d recipes read)",
+		e.Indexed,
+		e.Total,
+	)
 }
 
 // Progress reports the state of the recipe index.
 type Progress struct {
-	// Ready is true when search can be served.
+	// Ready is true when search can be served. It becomes true once every
+	// recipe in the latest Paprika list is indexed at its current hash, however
+	// many passes that took, and then stays true.
 	Ready bool
-	// Done and Total count the recipes read in the current pass.
-	Done, Total int
+	// Indexed is the number of recipes in the latest Paprika list that are in
+	// the index at their current hash. Total is the size of that list, and is
+	// zero until the list has been read.
+	Indexed, Total int
 	// Recipes is the number of entries in the index.
 	Recipes int
 }
@@ -108,10 +117,10 @@ type Cache struct {
 	mu             sync.RWMutex
 	index          map[string]*IndexEntry
 	intern         map[string]string
-	ready          bool // search can be served
-	complete       bool // the index once covered the whole recipe list
-	synced         bool // a recipe pass has succeeded in this process
-	done, total    int
+	ready          bool              // search can be served; once true, it stays true
+	synced         bool              // a recipe pass has succeeded in this process
+	latest         map[string]string // uid to hash, latest list; nil before one is read
+	indexed        int               // entries of latest in the index at the listed hash
 	fullReadAt     time.Time
 	recipesCounter int64 // counter at the last successful pass, or -1
 
@@ -215,7 +224,12 @@ func (c *Cache) changed() {
 func (c *Cache) Progress() Progress {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return Progress{Ready: c.ready, Done: c.done, Total: c.total, Recipes: len(c.index)}
+	return Progress{
+		Ready:   c.ready,
+		Indexed: c.indexed,
+		Total:   len(c.latest),
+		Recipes: len(c.index),
+	}
 }
 
 // Run loads the snapshot, then reads and compares the recipe list, fetching
@@ -485,9 +499,12 @@ func (c *Cache) forget(uid string) {
 	c.bodies.remove(uid)
 	c.mu.Lock()
 	_, had := c.index[uid]
-	delete(c.index, uid)
+	c.setLocked(uid, nil)
+	// The recipe is gone, so the list no longer waits for it.
+	delete(c.latest, uid)
+	ready := c.checkReadyLocked()
 	c.mu.Unlock()
-	if had {
+	if had || ready {
 		c.changed()
 	}
 }
@@ -514,11 +531,57 @@ func (c *Cache) storeEntry(e *IndexEntry) {
 	c.mu.Lock()
 	e.internWith(c.intern)
 	old, had := c.index[e.UID]
-	c.index[e.UID] = e
+	c.setLocked(e.UID, e)
+	ready := c.checkReadyLocked()
 	c.mu.Unlock()
-	if !had || !old.equal(e) {
+	if !had || !old.equal(e) || ready {
 		c.changed()
 	}
+}
+
+// setLocked stores e as the entry for uid, or removes the entry when e is nil,
+// and keeps the indexed count in step. The caller holds mu.
+func (c *Cache) setLocked(uid string, e *IndexEntry) {
+	if c.matchesLocked(uid, c.index[uid]) {
+		c.indexed--
+	}
+	if e == nil {
+		delete(c.index, uid)
+		return
+	}
+	c.index[uid] = e
+	if c.matchesLocked(uid, e) {
+		c.indexed++
+	}
+}
+
+// matchesLocked reports whether e is the entry for uid at the hash in the
+// latest recipe list. The caller holds mu.
+func (c *Cache) matchesLocked(uid string, e *IndexEntry) bool {
+	want, listed := c.latest[uid]
+	return listed && e != nil && e.Hash == want
+}
+
+// recountLocked recomputes the indexed count after the index or the latest
+// list was replaced wholesale. The caller holds mu.
+func (c *Cache) recountLocked() {
+	c.indexed = 0
+	for uid, e := range c.index {
+		if c.matchesLocked(uid, e) {
+			c.indexed++
+		}
+	}
+}
+
+// checkReadyLocked makes the cache ready once every recipe in the latest list
+// is indexed at its listed hash, and reports whether it just did. Readiness is
+// never withdrawn. The caller holds mu.
+func (c *Cache) checkReadyLocked() bool {
+	if c.ready || c.latest == nil || c.indexed != len(c.latest) {
+		return false
+	}
+	c.ready = true
+	return true
 }
 
 // expiredLocked reports whether recipes are due for a full re-read. The caller

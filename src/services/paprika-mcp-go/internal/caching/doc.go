@@ -20,9 +20,12 @@
 //
 // [Cache.Run] loads the snapshot (if a store is configured), reads
 // sync/recipes/ once, compares every uid and hash with the index, and fetches
-// what differs. Search works as soon as a complete snapshot is loaded. Without
-// one, [Cache.Search] returns a [*LoadingError] with progress until the first
-// pass finishes, and [Cache.Recipe] reads the API directly.
+// what differs. Search works as soon as a complete snapshot is loaded. Otherwise
+// [Cache.Search] returns a [*LoadingError] until every recipe in the latest list
+// is in the index at its listed hash, however many passes that takes; the
+// error reports that count out of the list's size. Readiness is rechecked after
+// each recipe is stored, and once reached it is never withdrawn. [Cache.Recipe]
+// reads the API directly until then.
 //
 // # Locking
 //

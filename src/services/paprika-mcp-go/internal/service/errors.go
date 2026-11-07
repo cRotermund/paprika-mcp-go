@@ -71,15 +71,15 @@ func (s *Service) mapError(op string, err error) error {
 	var loading *caching.LoadingError
 	switch {
 	case errors.As(err, &loading):
-		msg := "The recipe index is still loading after startup, so search is not available yet. Retry in a minute"
+		msg := "The recipe index is still loading. Retry shortly."
 		if loading.Total > 0 {
 			msg = fmt.Sprintf(
-				"The recipe index is still loading (%d of %d recipes read), so search is not available yet. Retry in a minute",
-				loading.Done,
+				"The recipe index is still loading: %d of %d recipes read. Retry shortly.",
+				loading.Indexed,
 				loading.Total,
 			)
 		}
-		return &Error{Kind: KindLoading, Message: msg + "; get_recipe works meanwhile.", cause: err}
+		return &Error{Kind: KindLoading, Message: msg + " get_recipe works meanwhile.", cause: err}
 	case errors.Is(err, paprikaclient.ErrUnauthorized):
 		s.log.Error("paprika login is failing", "op", op)
 		return &Error{

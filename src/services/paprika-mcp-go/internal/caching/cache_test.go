@@ -675,8 +675,8 @@ func TestStillLoadingUntilFirstPassFinishes(t *testing.T) {
 	if !errors.As(err, &loading) {
 		t.Fatalf("search error = %v, want *LoadingError", err)
 	}
-	if loading.Total != 3 || loading.Done != 1 {
-		t.Errorf("progress = %d of %d, want 1 of 3", loading.Done, loading.Total)
+	if loading.Total != 3 || loading.Indexed != 1 {
+		t.Errorf("progress = %d of %d, want 1 of 3", loading.Indexed, loading.Total)
 	}
 	if !strings.Contains(loading.Error(), "1 of 3") {
 		t.Errorf("message %q lacks progress", loading.Error())

@@ -140,12 +140,24 @@ The API returns no names without reading each recipe, so an empty index means re
 recipe once: about 75 seconds for 300 recipes, or 21 minutes for 5,000, at the pacing above.
 An [index snapshot](#index-snapshot) avoids most of this.
 
-1. Load the snapshot, if there is one. Search works from this point.
+1. Load the snapshot, if there is one. Search works from this point if the snapshot was saved
+   complete (that is, ready).
 2. Read `sync/recipes/` once, and compare every `uid` and `hash` with the index.
 3. In the background, fetch new and changed recipes, and remove the ones that are gone.
 
-Without a snapshot, recipe search returns a retryable "still loading" error with progress
-until step 3 finishes. `get_recipe` reads directly from the API until then.
+The index is ready when every recipe in the most recent `sync/recipes/` list is in the index at
+its listed `hash`. It does not matter how many passes that takes: a pass that fails partway
+keeps the recipes it read, and the next pass reads only the rest. Readiness is rechecked after
+each recipe is stored, so it can turn true in the middle of a pass. Once ready, the index stays
+ready: later passes, change checks and the 30-day full re-read update it in the background
+while search keeps working, even if one of them fails.
+
+Until the index is ready, recipe search returns a retryable "still loading" error with
+cumulative progress: the recipes indexed at their current hash out of the recipes in the latest
+list, such as "The recipe index is still loading: 120 of 229 recipes read. Retry shortly."
+Progress never restarts with a new pass. `get_recipe` reads directly from the API meanwhile.
+The snapshot's `complete` flag records whether the index was ready when it was saved. A
+partial snapshot resumes the load but does not serve search.
 
 ### Index Snapshot
 

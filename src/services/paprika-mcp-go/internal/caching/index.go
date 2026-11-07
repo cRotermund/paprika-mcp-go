@@ -120,6 +120,7 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 	c.mu.Lock()
 	force := c.expiredLocked()
 	seen := make(map[string]struct{}, len(refs))
+	latest := make(map[string]string, len(refs))
 	var todo []paprikaclient.RecipeRef
 	for _, ref := range refs {
 		if ref.UID == "" {
@@ -129,6 +130,7 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 			continue
 		}
 		seen[ref.UID] = struct{}{}
+		latest[ref.UID] = ref.Hash
 		if cur, ok := c.index[ref.UID]; force || !ok || cur.Hash != ref.Hash {
 			todo = append(todo, ref)
 		}
@@ -142,14 +144,17 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 	for _, uid := range removed {
 		delete(c.index, uid)
 	}
+	c.latest = latest
+	c.recountLocked()
+	justReady := c.checkReadyLocked()
+	indexed := c.indexed
 	full := len(todo) == len(seen)
-	c.done, c.total = 0, len(todo)
 	c.mu.Unlock()
 
 	for _, uid := range removed {
 		c.bodies.remove(uid)
 	}
-	if len(removed) > 0 {
+	if len(removed) > 0 || justReady {
 		c.changed()
 	}
 	if len(todo) > 0 {
@@ -157,6 +162,10 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 			"reading recipes",
 			"to_read",
 			len(todo),
+			"indexed",
+			indexed,
+			"total",
+			len(latest),
 			"removed",
 			len(removed),
 			"full_read",
@@ -177,31 +186,27 @@ func (c *Cache) syncRecipes(ctx context.Context) error {
 		default:
 			c.storeEntry(newIndexEntry(body.Value, ref.Hash))
 		}
-		c.mu.Lock()
-		c.done++
-		c.mu.Unlock()
 	}
 
 	c.mu.Lock()
-	firstComplete := !c.complete
 	firstSync := !c.synced
-	c.ready, c.complete, c.synced = true, true, true
+	c.synced = true
 	c.recipesCounter = status[ResourceRecipes]
 	if full {
 		c.fullReadAt = c.now()
 	}
-	indexed := len(c.index)
+	loaded := len(c.index)
 	c.mu.Unlock()
 	if firstSync {
 		c.log.Info(
 			"recipe index loaded",
 			"recipes",
-			indexed,
+			loaded,
 			"duration",
 			c.now().Sub(started).Round(time.Millisecond),
 		)
 	}
-	if firstComplete || full {
+	if full {
 		c.changed()
 	}
 	return nil

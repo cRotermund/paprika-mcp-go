@@ -44,7 +44,7 @@ type hit struct {
 // [*LoadingError].
 func (c *Cache) Search(ctx context.Context, q Query) ([]*IndexEntry, error) {
 	if p := c.Progress(); !p.Ready {
-		return nil, &LoadingError{Done: p.Done, Total: p.Total}
+		return nil, &LoadingError{Indexed: p.Indexed, Total: p.Total}
 	}
 	if err := c.ensureRecipesFresh(ctx); err != nil {
 		c.log.Warn("could not check for recipe changes; searching held index", "error", err)
