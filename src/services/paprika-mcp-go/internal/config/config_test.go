@@ -289,3 +289,62 @@ func TestLoadAccountAndIndex(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadRequestLimits(t *testing.T) {
+	tests := []struct {
+		name      string
+		perMinute string
+		burst     string
+		wantRate  int
+		wantBurst int
+		wantErr   bool
+	}{
+		{name: "defaults", wantRate: 60, wantBurst: 8},
+		{name: "valid", perMinute: "30", burst: "5", wantRate: 30, wantBurst: 5},
+		{
+			name:      "burst just above the reserve",
+			perMinute: "60",
+			burst:     "3",
+			wantRate:  60,
+			wantBurst: 3,
+		},
+		{name: "rate only", perMinute: "120", wantRate: 120, wantBurst: 8},
+		{name: "zero rate", perMinute: "0", wantErr: true},
+		{name: "negative rate", perMinute: "-5", wantErr: true},
+		{name: "non-numeric rate", perMinute: "fast", wantErr: true},
+		{name: "fractional rate", perMinute: "1.5", wantErr: true},
+		{name: "zero burst", burst: "0", wantErr: true},
+		{name: "negative burst", burst: "-1", wantErr: true},
+		{name: "non-numeric burst", burst: "lots", wantErr: true},
+		{name: "burst equal to the reserve", burst: "2", wantErr: true},
+		{name: "burst below the reserve", burst: "1", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvTokenSHA256, auth.HashToken("a"))
+			t.Setenv(EnvPort, "8080")
+			t.Setenv(EnvAllowedOrigins, "")
+			t.Setenv(EnvWritesEnabled, "")
+			t.Setenv(EnvRequestsPerMin, tt.perMinute)
+			t.Setenv(EnvRequestBurst, tt.burst)
+			setAccount(t)
+
+			cfg, err := Load(slog.New(slog.NewTextHandler(&strings.Builder{}, nil)))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if cfg.RequestsPerMinute != tt.wantRate || cfg.RequestBurst != tt.wantBurst {
+				t.Errorf(
+					"limits = %d/%d, want %d/%d",
+					cfg.RequestsPerMinute,
+					cfg.RequestBurst,
+					tt.wantRate,
+					tt.wantBurst,
+				)
+			}
+		})
+	}
+}

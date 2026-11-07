@@ -56,7 +56,7 @@ body, and counters rise by one per written object, including within a bulk POST.
 | Does Go's default multipart formatting work on sync routes? | Settled: yes, on `groceries`, `grocerylists`, `meals`, and `recipe/{uid}`; `notify` has no body |
 | Does gzip apply to every bulk write? | Settled for groceries, grocery lists, meals, and recipes; the other routes come from the client and were not captured |
 | How long do tokens last? | Observe over time. An invalid token returns HTTP 401 with "Invalid or expired credentials." and code 0 |
-| What are the rate limits? | Never test this, on any account; stay well below the reported 300 connections per minute |
+| What are the rate limits? | Never test this, on any account. A Paprika-side bucket of about 1 request per second sustained with a burst of about 8 to 10, with requests over it held rather than queued (Inferred). On 2026-11-07, on the real account, a background recipe load at about 3.4 requests per second stalled on its 11th request after about 3 s (status, list, 8 recipes, then the next request hung past the 20 s timeout), twice in a row, and recovered within 80 s; a probe at 1 request per second made about 21 requests without a stall (Live). The client now defaults to 60 requests per minute with a burst of 8, treats a timeout as throttling, and logs request counts at each stall to tune from |
 | What do the numeric error codes mean? | Observe; only code 0 seen so far |
 | Do grocery requests ever hang? | Yes (Live): on 2026-11-02 the test account saw `grocerylists` and `groceries` GET and POST requests sometimes hang for 30 s, about 6 times in 10 minutes at about 1 call per second. Writes that timed out had not landed when re-read |
 

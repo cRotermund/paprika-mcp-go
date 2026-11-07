@@ -181,7 +181,12 @@ type readJob struct {
 //
 // The status counter is read before the list, so a change that lands during
 // the pass is seen as a counter difference at the next check.
+//
+// Every request of a pass is marked background, so a long load leaves tokens
+// for tool calls. That covers the startup pass, retries, and passes started by
+// a freshness check, which run in the caller's goroutine.
 func (c *Cache) syncRecipes(ctx context.Context) error {
+	ctx = paprikaclient.Background(ctx)
 	started := c.now()
 	c.mu.Lock()
 	c.passStartedAt = started

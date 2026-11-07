@@ -14,6 +14,7 @@ import (
 
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/auth"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/indexstore"
+	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient"
 )
 
 const (
@@ -24,6 +25,8 @@ const (
 	EnvWritesEnabled  = "PAPRIKA_WRITES_ENABLED"
 	EnvPaprikaEmail   = "PAPRIKA_EMAIL"
 	EnvPaprikaPass    = "PAPRIKA_PASSWORD"
+	EnvRequestsPerMin = "PAPRIKA_REQUESTS_PER_MINUTE"
+	EnvRequestBurst   = "PAPRIKA_REQUEST_BURST"
 )
 
 type Config struct {
@@ -44,6 +47,11 @@ type Config struct {
 	// They are secrets: never log them.
 	PaprikaEmail    string
 	PaprikaPassword string
+
+	// RequestsPerMinute and RequestBurst size the Paprika client's token
+	// bucket (PAPRIKA_REQUESTS_PER_MINUTE, PAPRIKA_REQUEST_BURST).
+	RequestsPerMinute int
+	RequestBurst      int
 
 	// Index selects where the recipe index snapshot is kept (INDEX_* variables).
 	// The caller sets Index.FormatVersion.
@@ -106,6 +114,33 @@ func load(logger *slog.Logger, httpMode bool) (*Config, error) {
 	cfg.WritesEnabled, err = optionalBool(EnvWritesEnabled, false, logger)
 	if err != nil {
 		return nil, err
+	}
+
+	cfg.RequestsPerMinute, err = positiveInt(
+		EnvRequestsPerMin,
+		paprikaclient.DefaultRequestsPerMinute,
+		logger,
+	)
+	if err != nil {
+		return nil, err
+	}
+	cfg.RequestBurst, err = positiveInt(EnvRequestBurst, paprikaclient.DefaultRequestBurst, logger)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.RequestBurst <= paprikaclient.BackgroundReserve {
+		logger.Error(
+			"request burst must exceed the background reserve",
+			"name",
+			EnvRequestBurst,
+			"reserve",
+			paprikaclient.BackgroundReserve,
+		)
+		return nil, fmt.Errorf(
+			"environment variable %s must be greater than %d",
+			EnvRequestBurst,
+			paprikaclient.BackgroundReserve,
+		)
 	}
 
 	cfg.Index, err = indexstore.ConfigFromEnv(os.Getenv)
@@ -197,6 +232,26 @@ func ParseOrigins(raw string) ([]string, error) {
 	}
 
 	return origins, nil
+}
+
+// positiveInt reads an optional integer that must be greater than zero.
+func positiveInt(name string, fallback int, logger *slog.Logger) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		logger.Error("could not parse environment variable as an integer", "name", name)
+		return 0, fmt.Errorf("environment variable %s is not an integer: %w", name, err)
+	}
+	if value <= 0 {
+		logger.Error("environment variable must be a positive integer", "name", name)
+		return 0, fmt.Errorf("environment variable %s must be a positive integer", name)
+	}
+
+	return value, nil
 }
 
 func optionalBool(name string, fallback bool, logger *slog.Logger) (bool, error) {

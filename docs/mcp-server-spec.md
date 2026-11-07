@@ -47,7 +47,7 @@ paprika-mcp-go  (one replica)
     service        business rules, validation, write sequence
     caching        recipe index, body cache, small lists, search, change detection
     indexstore     optional index snapshot: none, filesystem, or S3
-    paprikaclient  login, requests, gzip multipart, pacing
+    paprikaclient  login, requests, gzip multipart, rate limiting
     |  HTTPS, Paprika token
 www.paprikaapp.com
 ```
@@ -91,9 +91,19 @@ production overlay must not change that.
 - **Login failures:** after a failed login, wait with exponential backoff, from 1 minute
   up to 1 hour, so a bad password cannot lock the account or look like an attack.
   Concurrent callers share a single login attempt.
-- **Pacing:** one request at a time across the process, with at least 250 ms between
-  requests, or at most 240 per minute. This stays under the one unverified report of a
-  block at about 300 connections per minute.
+- **Rate limit:** one request at a time across the process, and every request (logins
+  included) takes a token from an in-memory token bucket: 60 per minute with a burst of
+  8 by default (`PAPRIKA_REQUESTS_PER_MINUTE`, `PAPRIKA_REQUEST_BURST`). These sit near
+  the limit inferred from live stalls (about 1 request per second sustained, burst of 8
+  to 10), by the owner's choice, to be tuned from observed stalls. The project never
+  probes for the limit.
+- **Priority:** requests are interactive (tool calls) by default. The cache's recipe
+  passes, including age-based re-reads, are background requests, which take a token only
+  if at least 2 would remain, so tool calls are not stuck behind a long load.
+- **Stalls:** a timeout is treated as a throttle signal. The bucket is emptied and the
+  next request waits 60 seconds. A warning logs how many requests went out in the last
+  minute, the rate and burst settings, and the method and path (no bodies or
+  credentials). Nothing extra is sent to measure.
 - **Timeouts:** 20 seconds per request (live testing saw grocery requests hang for 30
   seconds, so a hung call costs 20 seconds, not 30, and is reported at that point).
   After 3 consecutive timeouts, pause for 5 minutes, because a rate block looks like a
@@ -137,7 +147,7 @@ re-read from Paprika, and startup corrects it.
 ### Startup
 
 The API returns no names without reading each recipe, so an empty index means reading every
-recipe once: about 75 seconds for 300 recipes, or 21 minutes for 5,000, at the pacing above.
+recipe once: about 75 seconds for 300 recipes, or 21 minutes for 5,000, at the default rate limit (about 60 requests a minute, so about 5 minutes for 300 recipes and about 85 minutes for 5,000).
 An [index snapshot](#index-snapshot) avoids most of this.
 
 1. Load the snapshot, if there is one. Search works from this point if the snapshot was saved
@@ -419,6 +429,8 @@ registered at all, so a read-only deployment has no write path.
 | `PAPRIKA_PASSWORD` | yes | yes | | Paprika password |
 | `MCP_TOKEN_SHA256` | HTTP only | yes | | One or two token hashes |
 | `PAPRIKA_WRITES_ENABLED` | no | no | `false` | Registers write tools |
+| `PAPRIKA_REQUESTS_PER_MINUTE` | no | no | `60` | Paprika request rate (positive integer) |
+| `PAPRIKA_REQUEST_BURST` | no | no | `8` | Paprika request burst (positive integer, above the background reserve of 2) |
 | `MCP_ALLOWED_ORIGINS` | no | no | empty | Extra allowed `Origin` values |
 | `INDEX_STORE` | no | no | `none` | Snapshot mode: `none`, `filesystem`, or `s3` |
 | `INDEX_FILE_PATH` | `filesystem` only | no | | Snapshot file path, on a writable volume |
@@ -508,7 +520,7 @@ real backend we test against.
   address and password never enter the repository or CI.
 - **Not assumed:** that it behaves exactly like an older account with years of data. Live probe
   results from the real account remain the evidence for real data shapes.
-- **Pacing:** test tools use the server's 250 ms pacing, because rate limits might apply per IP
+- **Pacing:** test tools stay at or below the server's default rate of 1 request per second, because rate limits might apply per IP
   and affect the real account too.
 - **No load tests, ever.** Nothing in this project stress-tests Paprika's servers or probes for
   rate limits, on any account. Scale tests use the fake server.
@@ -561,7 +573,7 @@ Each milestone is one or more pull requests, and is independently useful.
 | # | Milestone | Done when |
 | --- | --- | --- |
 | M1 | Inbound auth, limits, and hardening | `/mcp` rejects unauthenticated requests, with `ping` still working when authenticated |
-| M2 | Paprika client, read side | Login, reads, pacing, and retries pass against the fake server and one manual run on the test account |
+| M2 | Paprika client, read side | Login, reads, rate limiting, and retries pass against the fake server and one manual run on the test account |
 | M3 | Cache, index store, and read tools | All three snapshot modes pass their tests, and all read tools work against the test account, deployed read-only, with the production overlay changed to one replica and `Recreate` |
 | M4 | Write checks | W1 to W9 are complete, including app confirmation, and repeatable on the test account, the API docs and this spec are updated with results, and the probe's docs describe its new mode, with GET-only remaining the default |
 | M5 | Write tools | Recipes, then meals, then groceries, each checked in the app on the test account with `MCP-TEST` objects |

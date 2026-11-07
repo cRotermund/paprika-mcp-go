@@ -29,7 +29,6 @@ const (
 	// grocery calls hang for 30 s, so 20 s fails a hung call early and still
 	// leaves room for a slow healthy one.
 	DefaultRequestTimeout   = 20 * time.Second
-	DefaultMinInterval      = 250 * time.Millisecond
 	DefaultLoginBackoffMin  = time.Minute
 	DefaultLoginBackoffMax  = time.Hour
 	DefaultTimeoutThreshold = 3
@@ -62,9 +61,16 @@ type Config struct {
 
 	// RequestTimeout bounds each request, including reading the body.
 	RequestTimeout time.Duration
-	// MinInterval is the minimum time from the end of one request to the start
-	// of the next. A negative value disables pacing.
-	MinInterval time.Duration
+	// RequestsPerMinute and RequestBurst set the token bucket every request
+	// takes a token from. They default to DefaultRequestsPerMinute and
+	// DefaultRequestBurst. A negative RequestsPerMinute disables limiting and
+	// the stall cooldown, which tests use. RequestBurst must exceed
+	// BackgroundReserve.
+	RequestsPerMinute int
+	RequestBurst      int
+	// StallCooldown is how long the next request waits after a timeout empties
+	// the bucket. It defaults to DefaultStallCooldown.
+	StallCooldown time.Duration
 	// LoginBackoffMin and LoginBackoffMax bound the exponential wait after
 	// rejected logins.
 	LoginBackoffMin time.Duration
@@ -80,7 +86,7 @@ type Config struct {
 }
 
 // Client talks to the Paprika API. It is safe for concurrent use; requests are
-// serialized and paced internally.
+// serialized and rate limited internally.
 type Client struct {
 	cfg  Config
 	base string
@@ -88,7 +94,10 @@ type Client struct {
 	log  *slog.Logger
 	gate chan struct{}
 
-	lastEnd time.Time // guarded by gate
+	// bucket limits request starts; nil when limiting is off.
+	bucket *bucket
+	// sent remembers recent request times for the stall warning.
+	sent *requestLog
 
 	mu                sync.Mutex
 	token             string
@@ -123,8 +132,21 @@ func New(cfg Config) (*Client, error) {
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = DefaultRequestTimeout
 	}
-	if cfg.MinInterval == 0 {
-		cfg.MinInterval = DefaultMinInterval
+	if cfg.RequestsPerMinute == 0 {
+		cfg.RequestsPerMinute = DefaultRequestsPerMinute
+	}
+	if cfg.RequestBurst == 0 {
+		cfg.RequestBurst = DefaultRequestBurst
+	}
+	if cfg.RequestsPerMinute > 0 && cfg.RequestBurst <= BackgroundReserve {
+		return nil, fmt.Errorf(
+			"%w: request burst must be greater than %d",
+			ErrInvalidArgument,
+			BackgroundReserve,
+		)
+	}
+	if cfg.StallCooldown <= 0 {
+		cfg.StallCooldown = DefaultStallCooldown
 	}
 	if cfg.LoginBackoffMin <= 0 {
 		cfg.LoginBackoffMin = DefaultLoginBackoffMin
@@ -162,13 +184,22 @@ func New(cfg Config) (*Client, error) {
 		return http.ErrUseLastResponse
 	}
 
-	return &Client{
+	c := &Client{
 		cfg:  cfg,
 		base: base,
 		http: httpClient,
 		log:  logger,
 		gate: make(chan struct{}, 1),
-	}, nil
+		sent: newRequestLog(time.Minute),
+	}
+	if cfg.RequestsPerMinute > 0 {
+		c.bucket = newBucket(
+			cfg.RequestsPerMinute,
+			cfg.RequestBurst,
+			bucketClock{now: cfg.Now},
+		)
+	}
+	return c, nil
 }
 
 func validateBaseURL(raw string) (string, error) {
@@ -410,28 +441,33 @@ func decodeEnvelope(res *response, isWrite bool) (json.RawMessage, error) {
 	return env.Result, nil
 }
 
-// send performs one paced HTTP exchange. It does not interpret the status.
+// send performs one rate-limited HTTP exchange. It does not interpret the
+// status. A token is taken before the gate, so a background request waiting
+// for the reserve does not hold up interactive ones.
 func (c *Client) send(ctx context.Context, r request) (*response, error) {
+	if err := c.checkPaused(); err != nil {
+		return nil, err
+	}
+	if c.bucket != nil {
+		reserve := 0
+		if IsBackground(ctx) {
+			reserve = BackgroundReserve
+		}
+		if err := c.bucket.Wait(ctx, reserve); err != nil {
+			return nil, err
+		}
+	}
 	select {
 	case c.gate <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	defer func() {
-		c.lastEnd = time.Now()
-		<-c.gate
-	}()
+	defer func() { <-c.gate }()
 
-	if wait := c.pausedFor(); wait > 0 {
-		return nil, fmt.Errorf(
-			"%w: paused after repeated timeouts, resuming in %s",
-			ErrTemporary,
-			wait.Round(time.Second),
-		)
-	}
-	if err := c.pace(ctx); err != nil {
+	if err := c.checkPaused(); err != nil {
 		return nil, err
 	}
+	c.sent.Add(c.cfg.Now())
 
 	rctx, cancel := context.WithTimeout(ctx, c.cfg.RequestTimeout)
 	defer cancel()
@@ -490,22 +526,39 @@ func (c *Client) pausedFor() time.Duration {
 	return c.pausedUntil.Sub(c.cfg.Now())
 }
 
-func (c *Client) pace(ctx context.Context) error {
-	if c.cfg.MinInterval <= 0 || c.lastEnd.IsZero() {
-		return nil
+func (c *Client) checkPaused() error {
+	if wait := c.pausedFor(); wait > 0 {
+		return fmt.Errorf(
+			"%w: paused after repeated timeouts, resuming in %s",
+			ErrTemporary,
+			wait.Round(time.Second),
+		)
 	}
-	wait := c.cfg.MinInterval - time.Since(c.lastEnd)
-	if wait <= 0 {
-		return nil
+	return nil
+}
+
+// noteStall treats a timeout as a throttle signal: it empties the bucket so the
+// next request waits out the cooldown, and logs what was sent just before.
+// Nothing is sent to measure anything; the count is from the client's own log.
+func (c *Client) noteStall(r request) {
+	if c.bucket != nil {
+		c.bucket.Drain(c.cfg.StallCooldown)
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	c.log.Warn(
+		"paprika request stalled; treating it as throttling",
+		"requests_last_minute",
+		c.sent.Count(c.cfg.Now()),
+		"requests_per_minute",
+		c.cfg.RequestsPerMinute,
+		"burst",
+		c.cfg.RequestBurst,
+		"method",
+		r.method,
+		"path",
+		r.path,
+		"cooldown",
+		c.cfg.StallCooldown,
+	)
 }
 
 func (c *Client) noteResponse() {
@@ -532,6 +585,7 @@ func (c *Client) transportFailure(ctx context.Context, r request, err error) err
 	cause := "request failed"
 	if timedOut {
 		cause = "request timed out"
+		c.noteStall(r)
 		c.mu.Lock()
 		c.consecutiveTO++
 		if c.consecutiveTO >= c.cfg.TimeoutThreshold {

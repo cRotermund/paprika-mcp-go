@@ -61,14 +61,14 @@ func newTestClient(
 	t.Helper()
 	clock := newFakeClock()
 	cfg := Config{
-		BaseURL:        f.URL(),
-		Email:          f.Email(),
-		Password:       f.Password(),
-		UserAgent:      "paprika-mcp-go/test",
-		Logger:         discardLogger(),
-		RequestTimeout: 5 * time.Second,
-		MinInterval:    -1,
-		Now:            clock.Now,
+		BaseURL:           f.URL(),
+		Email:             f.Email(),
+		Password:          f.Password(),
+		UserAgent:         "paprika-mcp-go/test",
+		Logger:            discardLogger(),
+		RequestTimeout:    5 * time.Second,
+		RequestsPerMinute: -1,
+		Now:               clock.Now,
 	}
 	if mutate != nil {
 		mutate(&cfg)
@@ -330,47 +330,6 @@ func TestSharedLogin(t *testing.T) {
 				t.Fatalf("logins = %d, want 1 shared attempt", got)
 			}
 		})
-	}
-}
-
-func TestPacing(t *testing.T) {
-	const interval = 40 * time.Millisecond
-	f := newFake(t)
-	c, _ := newTestClient(t, f, func(cfg *Config) { cfg.MinInterval = interval })
-
-	var wg sync.WaitGroup
-	for range 3 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := c.Status(context.Background()); err != nil {
-				t.Errorf("Status: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	reqs := f.Requests()
-	if len(reqs) != 4 {
-		t.Fatalf("requests = %d, want 4", len(reqs))
-	}
-	for i := 1; i < len(reqs); i++ {
-		if gap := reqs[i].Time.Sub(reqs[i-1].Time); gap < interval-10*time.Millisecond {
-			t.Errorf("gap before request %d = %s, want at least about %s", i, gap, interval)
-		}
-	}
-	if got := f.MaxConcurrent(); got != 1 {
-		t.Fatalf("max concurrent requests = %d, want 1", got)
-	}
-}
-
-func TestPacingHonorsContext(t *testing.T) {
-	f := newFake(t)
-	c, _ := newTestClient(t, f, func(cfg *Config) { cfg.MinInterval = 300 * time.Millisecond })
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	if _, err := c.Status(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("error = %v, want context deadline", err)
 	}
 }
 

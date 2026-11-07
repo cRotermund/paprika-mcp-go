@@ -29,11 +29,11 @@ func ClientWith(
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	cfg := paprikaclient.Config{
-		BaseURL:     fake.URL(),
-		Email:       fake.Email(),
-		Password:    fake.Password(),
-		MinInterval: -1,
-		Logger:      logger,
+		BaseURL:           fake.URL(),
+		Email:             fake.Email(),
+		Password:          fake.Password(),
+		RequestsPerMinute: -1,
+		Logger:            logger,
 	}
 	if tweak != nil {
 		tweak(&cfg)
