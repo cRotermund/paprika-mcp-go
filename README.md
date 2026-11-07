@@ -23,8 +23,8 @@ with [AGENTS.md](AGENTS.md).
 
 ## Purpose and Credits
 
-This is a personal project to enhance my home-based ecosystem. The reverse engineering
-behind it was not done to resell anything or to make any money.
+This is a personal project to enhance my home ecosystem and agentic tooling. The reverse
+engineering behind it was not done to resell anything or to make any money.
 
 Paprika's API is unofficial and undocumented, and this project is not affiliated with
 Hindsight Labs, LLC. Our research started from

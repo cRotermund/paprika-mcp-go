@@ -55,3 +55,8 @@ kustomization.local.yaml
 .vscode/
 *.suo
 *.swp
+
+# ==========================================
+# Server Artifacts (Local Testing)
+# ==========================================
+*recipe-index.json.gz
