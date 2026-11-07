@@ -428,7 +428,7 @@ func TestRunLoadsSnapshotThenSyncs(t *testing.T) {
 	}
 }
 
-func TestSnapshotExpiryRereadsEverythingWhileServing(t *testing.T) {
+func TestSnapshotOfOldReadsServesWhileRereadingEverything(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	seedThree(e)
@@ -453,17 +453,17 @@ func TestSnapshotExpiryRereadsEverythingWhileServing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := e.recipeFetches(); got != 3 {
-		t.Errorf("expired snapshot: fetches = %d, want all 3 recipes", got)
+		t.Errorf("old snapshot: fetches = %d, want all 3 recipes", got)
 	}
 	if err := second.Sync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.recipeFetches(); got != 3 {
-		t.Errorf("after the full re-read another pass fetched %d recipes", got-3)
+		t.Errorf("after the re-read another pass fetched %d recipes", got-3)
 	}
 }
 
-func TestFreshSnapshotIsNotReread(t *testing.T) {
+func TestSnapshotOfRecentReadsIsNotReread(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	seedThree(e)
@@ -475,14 +475,16 @@ func TestFreshSnapshotIsNotReread(t *testing.T) {
 	saveSnapshot(t, first, store)
 	e.fake.ResetRequests()
 
-	e.clock.Advance(29 * 24 * time.Hour)
+	// Jitter can make a stamp up to 3 days older than the read, so stay well
+	// under the 30 day expiry.
+	e.clock.Advance(26 * 24 * time.Hour)
 	second := e.newCache(store)
 	second.LoadSnapshot(ctx)
 	if err := second.Sync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.recipeFetches(); got != 0 {
-		t.Errorf("a 29 day old snapshot caused %d fetches", got)
+		t.Errorf("a 26 day old snapshot caused %d fetches", got)
 	}
 }
 
@@ -510,6 +512,31 @@ func TestUnusableSnapshotIsIgnored(t *testing.T) {
 				if err := other.Save(
 					ctx,
 					indexstore.Snapshot{Payload: []byte(`{"complete":true,"recipes":[]}`)},
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			"version 1 snapshot",
+			func(t *testing.T, path string) {
+				v1, err := indexstore.New(
+					ctx,
+					indexstore.Config{
+						Mode:          indexstore.ModeFilesystem,
+						FilePath:      path,
+						FormatVersion: 1,
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := v1.Save(
+					ctx,
+					indexstore.Snapshot{Payload: []byte(
+						`{"complete":true,"full_read_at":"2030-01-01T00:00:00Z",` +
+							`"recipes":[{"u":"R1","h":"x","n":"Chicken Soup"}]}`,
+					)},
 				); err != nil {
 					t.Fatal(err)
 				}

@@ -113,7 +113,7 @@ re-read from Paprika, and startup corrects it.
 
 | Data | Held in memory | Source of a miss |
 | --- | --- | --- |
-| Recipe index | One small entry per recipe | Full recipe read, once per changed `hash` |
+| Recipe index | One small entry per recipe | Full recipe read, once per changed `hash` and once per 30 days |
 | Recipe bodies | About the 50 most recently used, as raw JSON | `sync/recipe/{uid}/` |
 | Categories, meals, meal types, grocery lists, grocery items, aisles, remembered ingredients | Whole lists | One bulk request |
 
@@ -149,7 +149,7 @@ The index is ready when every recipe in the most recent `sync/recipes/` list is 
 its listed `hash`. It does not matter how many passes that takes: a pass that fails partway
 keeps the recipes it read, and the next pass reads only the rest. Readiness is rechecked after
 each recipe is stored, so it can turn true in the middle of a pass. Once ready, the index stays
-ready: later passes, change checks and the 30-day full re-read update it in the background
+ready: later passes, change checks and age-based re-reads update it in the background
 while search keeps working, even if one of them fails.
 
 Until the index is ready, recipe search returns a retryable "still loading" error with
@@ -184,8 +184,14 @@ Rules for every mode:
   costs one full load.
 - **Expiry:** the comparison at startup assumes every edit changes a recipe's `hash`. We
   captured this from the Windows client only, and a missed edit would otherwise survive
-  restarts. A snapshot more than 30 days past its last full read still serves searches, but every recipe is
-  read again in the background. The cache does the same in a long-running process.
+  restarts. So each index entry records when its recipe was last read (`ReadAt`, saved in the
+  snapshot), and a recipe not read for 30 days is due for a re-read in the background, even
+  with an unchanged `hash`. A pass reads new and changed recipes first, then the due ones,
+  oldest first, so a pass that stalls resumes with what is still due and nothing is read
+  twice. Search keeps working throughout, and the cache does the same in a long-running
+  process. To keep the due dates from bunching, a recipe read for the first time or re-read
+  by age is stamped up to 10% of the expiry (3 days) earlier, by an amount derived from its
+  `uid`.
 - **Bad configuration stops startup:** an unknown mode, or a mode missing its required
   settings, is a startup error, so that a typo cannot silently cause full loads.
 - **S3 client:** uses `aws-sdk-go-v2` and its default credential chain, so a deployment can
@@ -571,7 +577,7 @@ before any path to changing account data exists.
 | Paprika changes its unofficial API | Tools break, or writes misbehave | Errors surface clearly, the kill switch stops writes, and the probe can recheck the API |
 | Paprika's terms restrict this use | Account or legal exposure | **Read the terms.** They have not been reviewed yet. The repository is private to limit this risk, and it was public for a short time before that. |
 | A newer app stores data in fields 3.3.1 lacks | Possible data loss on update | Raw JSON round trip from a fresh read, gated by W3 |
-| Another client edits a recipe without changing its `hash` | Stale search results or cached body | Snapshot expiry after 30 days. Writes are unaffected, because they re-read from the API. |
+| Another client edits a recipe without changing its `hash` | Stale search results or cached body | Each recipe is re-read when 30 days old, so a stale entry lasts at most that long. Writes are unaffected, because they re-read from the API. |
 | A bad write reaches every device | Data damage | One object per write, no permanent recipe delete, and recipe backups |
 | A model acts on injected instructions | Unwanted edits | Narrow tools, client confirmation, audit log |
 

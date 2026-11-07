@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/indexstore"
 )
@@ -13,19 +12,19 @@ import (
 // indexstore.Config.FormatVersion. Change it whenever IndexEntry or
 // snapshotPayload changes shape; an older snapshot is then ignored and costs
 // one full load.
-const SnapshotFormatVersion = 1
+//
+// Version 2 added IndexEntry.ReadAt and dropped the payload's full_read_at.
+const SnapshotFormatVersion = 2
 
-// snapshotPayload is the cache's snapshot schema: the recipe index and when it
-// was last verified by reading every recipe.
+// snapshotPayload is the cache's snapshot schema: the recipe index, in which
+// every entry records when its recipe was last read.
 type snapshotPayload struct {
 	// Complete is the cache's readiness when the snapshot was taken: false for
 	// a partial index saved during the first load. Such a snapshot is used to
 	// resume, but search stays unavailable until every recipe in the Paprika
 	// list is indexed at its current hash.
-	Complete bool `json:"complete"`
-	// FullReadAt is when every recipe was last read from the API.
-	FullReadAt time.Time     `json:"full_read_at"`
-	Recipes    []*IndexEntry `json:"recipes"`
+	Complete bool          `json:"complete"`
+	Recipes  []*IndexEntry `json:"recipes"`
 }
 
 // Snapshot builds the snapshot of the current index. It is the source for an
@@ -33,9 +32,8 @@ type snapshotPayload struct {
 func (c *Cache) Snapshot(context.Context) (indexstore.Snapshot, error) {
 	c.mu.RLock()
 	p := snapshotPayload{
-		Complete:   c.ready,
-		FullReadAt: c.fullReadAt,
-		Recipes:    make([]*IndexEntry, 0, len(c.index)),
+		Complete: c.ready,
+		Recipes:  make([]*IndexEntry, 0, len(c.index)),
 	}
 	for _, e := range c.index {
 		p.Recipes = append(p.Recipes, e)
@@ -89,11 +87,13 @@ func (c *Cache) LoadSnapshot(ctx context.Context) {
 	}
 	c.ready = p.Complete
 	c.recountLocked()
-	c.fullReadAt = p.FullReadAt
-	if c.fullReadAt.IsZero() && p.Complete {
-		c.fullReadAt = snap.SavedAt
+	now := c.now()
+	due := 0
+	for _, e := range entries {
+		if c.dueByAgeLocked(e, now) {
+			due++
+		}
 	}
-	expired := c.expiredLocked()
 	c.mu.Unlock()
 
 	c.log.Info(
@@ -104,7 +104,7 @@ func (c *Cache) LoadSnapshot(ctx context.Context) {
 		p.Complete,
 		"saved_at",
 		snap.SavedAt,
-		"reread_all",
-		expired,
+		"due_by_age",
+		due,
 	)
 }

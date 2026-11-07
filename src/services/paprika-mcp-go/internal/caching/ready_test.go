@@ -100,8 +100,8 @@ func TestReadyAsSoonAsLastMissingRecipeArrives(t *testing.T) {
 	store, _ := newFileStore(t)
 
 	// Take a snapshot of a full index, then make it partial: R1 is missing, and
-	// the full read is overdue, so the next pass reads R1 first and then reads
-	// R2 and R3 again.
+	// R2 and R3 were read long ago, so the next pass reads R1 first and then
+	// reads R2 and R3 again.
 	full := e.newCache(nil)
 	if err := full.Sync(ctx); err != nil {
 		t.Fatal(err)
@@ -121,12 +121,12 @@ func TestReadyAsSoonAsLastMissingRecipeArrives(t *testing.T) {
 	kept := entries[:0]
 	for _, entry := range entries {
 		if entry["u"] != "R1" {
+			entry["ra"] = e.clock.Now().Add(-365 * 24 * time.Hour)
 			kept = append(kept, entry)
 		}
 	}
 	payload["recipes"], _ = json.Marshal(kept)
 	payload["complete"] = json.RawMessage("false")
-	payload["full_read_at"], _ = json.Marshal(e.clock.Now().Add(-365 * 24 * time.Hour))
 	raw, _ := json.Marshal(payload)
 	if err := store.Save(ctx, indexstore.Snapshot{Payload: raw}); err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestReadyStaysReadyThroughFailingPasses(t *testing.T) {
 	}
 }
 
-func TestExpiryDoesNotMakeReadyCacheUnready(t *testing.T) {
+func TestAgeBasedRereadDoesNotMakeReadyCacheUnready(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	seedThree(e)
@@ -280,13 +280,13 @@ func TestExpiryDoesNotMakeReadyCacheUnready(t *testing.T) {
 	e.clock.Advance(31 * 24 * time.Hour)
 	failRecipe(e, "R2", 1)
 	if err := c.Sync(ctx); err == nil {
-		t.Fatal("expected the full re-read to fail")
+		t.Fatal("expected the age-based re-read to fail")
 	}
 	if p := c.Progress(); !p.Ready || p.Indexed != 3 || p.Total != 3 {
 		t.Errorf("progress = %+v, want ready with 3 of 3", p)
 	}
 	if _, err := c.Search(ctx, caching.Query{}); err != nil {
-		t.Errorf("search during the full re-read: %v", err)
+		t.Errorf("search during the age-based re-read: %v", err)
 	}
 }
 

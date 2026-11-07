@@ -57,7 +57,8 @@ type Options struct {
 	Store indexstore.Store
 	// FreshFor is how long a sync/status/ answer is trusted.
 	FreshFor time.Duration
-	// Expiry is how long recipes may go without a full re-read.
+	// Expiry is how long a recipe may go without being read before it is read
+	// again.
 	Expiry time.Duration
 	// BodyCacheSize is the number of recipe bodies kept.
 	BodyCacheSize int
@@ -121,8 +122,8 @@ type Cache struct {
 	synced         bool              // a recipe pass has succeeded in this process
 	latest         map[string]string // uid to hash, latest list; nil before one is read
 	indexed        int               // entries of latest in the index at the listed hash
-	fullReadAt     time.Time
-	recipesCounter int64 // counter at the last successful pass, or -1
+	recipesCounter int64             // counter at the last successful pass, or -1
+	passStartedAt  time.Time         // start of the latest recipe pass of any kind
 
 	syncMu sync.Mutex // one recipe pass at a time
 
@@ -492,7 +493,7 @@ func (c *Cache) UpsertRecipe(body paprikaclient.Entry[paprikaclient.Recipe]) {
 		return
 	}
 	c.bodies.put(body)
-	c.storeEntry(newIndexEntry(body.Value, ""))
+	c.storeEntry(newIndexEntry(body.Value, "", c.now()))
 }
 
 func (c *Cache) forget(uid string) {
@@ -582,10 +583,4 @@ func (c *Cache) checkReadyLocked() bool {
 	}
 	c.ready = true
 	return true
-}
-
-// expiredLocked reports whether recipes are due for a full re-read. The caller
-// holds mu.
-func (c *Cache) expiredLocked() bool {
-	return !c.fullReadAt.IsZero() && c.now().Sub(c.fullReadAt) > c.expiry
 }
