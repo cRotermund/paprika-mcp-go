@@ -33,7 +33,10 @@ func newFakeAPI(t *testing.T) (*httptest.Server, func() []recordedRequest) {
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		requests = append(requests, recordedRequest{r.Method, r.URL.Path, r.Header.Get("Authorization")})
+		requests = append(
+			requests,
+			recordedRequest{r.Method, r.URL.Path, r.Header.Get("Authorization")},
+		)
 		mu.Unlock()
 
 		switch r.URL.Path {
@@ -68,7 +71,11 @@ func TestRunSendsOnlyReadsAfterLogin(t *testing.T) {
 	server, requests := newFakeAPI(t)
 
 	var out bytes.Buffer
-	if err := newProber(server.URL, 0, &out).run(context.Background(), testEmail, testPassword, 5); err != nil {
+	if err := newProber(
+		server.URL,
+		0,
+		&out,
+	).run(context.Background(), testEmail, testPassword, 5); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -102,7 +109,11 @@ func TestReportOmitsPrivateValues(t *testing.T) {
 	server, _ := newFakeAPI(t)
 
 	var out bytes.Buffer
-	if err := newProber(server.URL, 0, &out).run(context.Background(), testEmail, testPassword, 5); err != nil {
+	if err := newProber(
+		server.URL,
+		0,
+		&out,
+	).run(context.Background(), testEmail, testPassword, 5); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -112,7 +123,15 @@ func TestReportOmitsPrivateValues(t *testing.T) {
 			t.Errorf("report contains %q:\n%s", private, report)
 		}
 	}
-	for _, want := range []string{"`name`", "date 9999-99-99 99:99:99", "`recipe_uid`", "null:1", "`newthing` = 1", "`categories[]`", "uuid-upper"} {
+	for _, want := range []string{
+		"`name`",
+		"date 9999-99-99 99:99:99",
+		"`recipe_uid`",
+		"null:1",
+		"`newthing` = 1",
+		"`categories[]`",
+		"uuid-upper",
+	} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report is missing %q:\n%s", want, report)
 		}

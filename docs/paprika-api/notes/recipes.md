@@ -22,6 +22,9 @@ Hundreds of recipes mean hundreds of single-recipe requests on the first load.
 
 `GET sync/recipe/{uid}/` returns one complete recipe. (Live)
 
+For a `uid` that does not exist it answers HTTP 200 with an error envelope, code 0 and
+message "Recipe not found.", not a 404. (Live) Check the envelope on this route.
+
 ## Create or Update
 
 `POST sync/recipe/{uid}/`, with the recipe object as gzipped JSON in the `data`

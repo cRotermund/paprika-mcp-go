@@ -56,8 +56,9 @@ body, and counters rise by one per written object, including within a bulk POST.
 | Does Go's default multipart formatting work on sync routes? | Settled: yes, on `groceries`, `grocerylists`, `meals`, and `recipe/{uid}`; `notify` has no body |
 | Does gzip apply to every bulk write? | Settled for groceries, grocery lists, meals, and recipes; the other routes come from the client and were not captured |
 | How long do tokens last? | Observe over time. An invalid token returns HTTP 401 with "Invalid or expired credentials." and code 0 |
-| What are the rate limits? | Never test this, on any account; stay well below the reported 300 connections per minute |
+| What are the rate limits? | Never test this, on any account. On 2026-11-07, on the real account: steady spacing of 1.20 s or wider passed, including 50 a minute with a burst of 4 loading 228 recipes; steady spacing of 1.09 s or closer stalled on the 11th request; a burst of 8 after 60 s or more of quiet passed; a second burst 12 s after a burst of 8 stalled on its 5th request, although no 12 s span held more than 10 requests; and every request used HTTP/1.1 on one reused connection, which rules out a per-connection or HTTP/2 cause (Live). The limit seems to be about 50 requests a minute sustained, with little tolerance for bursts after recent activity, and a request over it is held for more than 20 s; neither a simple token bucket nor a strict sliding window fits every run (Inferred). This replaces the earlier guesses of 10 requests per 11 s and 1 request per second with a burst of 8 to 10. The client uses a token bucket of 50 a minute with a burst of 4, with 45 a minute as the fallback, treats a timeout as throttling, and logs `requests_last_12s` and connection details at each stall |
 | What do the numeric error codes mean? | Observe; only code 0 seen so far |
+| Do grocery requests ever hang? | Yes (Live): on 2026-11-02 the test account saw `grocerylists` and `groceries` GET and POST requests sometimes hang for 30 s, about 6 times in 10 minutes at about 1 call per second. Writes that timed out had not landed when re-read |
 
 ## Could Decrypting the Client's Strings Help?
 

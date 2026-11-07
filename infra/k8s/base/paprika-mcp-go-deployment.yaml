@@ -6,6 +6,8 @@ metadata:
     app: paprika-mcp-go
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: paprika-mcp-go
@@ -33,6 +35,29 @@ spec:
           env:
             - name: PORT
               value: "8080"
+            - name: PAPRIKA_WRITES_ENABLED
+              value: "false"
+            - name: PAPRIKA_REQUESTS_PER_MINUTE
+              value: "50"
+            - name: PAPRIKA_REQUEST_BURST
+              value: "4"
+            - name: INDEX_STORE
+              value: "none"
+            - name: MCP_TOKEN_SHA256
+              valueFrom:
+                secretKeyRef:
+                  name: paprika-mcp-go
+                  key: MCP_TOKEN_SHA256
+            - name: PAPRIKA_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: paprika-mcp-go
+                  key: PAPRIKA_EMAIL
+            - name: PAPRIKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: paprika-mcp-go
+                  key: PAPRIKA_PASSWORD
           livenessProbe:
             httpGet:
               path: /health

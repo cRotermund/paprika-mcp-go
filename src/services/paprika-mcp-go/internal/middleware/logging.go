@@ -20,18 +20,28 @@ func Logger(logger *slog.Logger) func(next http.Handler) http.Handler {
 			wrapped := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			requestLogger := logger.With(
-				"requestId", chimiddleware.GetReqID(r.Context()),
-				"method", r.Method,
-				"path", r.URL.Path,
-				"route", r.Pattern)
+				"requestId",
+				chimiddleware.GetReqID(r.Context()),
+				"method",
+				r.Method,
+				"path",
+				r.URL.Path,
+				"route",
+				r.Pattern,
+			)
 
 			ctx := context.WithValue(r.Context(), loggerKey{}, requestLogger)
 			next.ServeHTTP(wrapped, r.WithContext(ctx))
 
-			requestLogger.Info("request",
-				"status", wrapped.Status(),
-				"bytes", wrapped.BytesWritten(),
-				"duration", time.Since(start).String())
+			requestLogger.Info(
+				"request",
+				"status",
+				wrapped.Status(),
+				"bytes",
+				wrapped.BytesWritten(),
+				"duration",
+				time.Since(start).String(),
+			)
 		})
 	}
 }

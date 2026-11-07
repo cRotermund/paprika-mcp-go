@@ -50,14 +50,42 @@ func run() error {
 	samples := flag.Int("samples", 5, "number of full recipes to read")
 	outPath := flag.String("out", "", "report file (default stdout)")
 	envFile := flag.String("env-file", "", "credentials file (default .env)")
-	writeChecks := flag.Bool("write-checks", false, "back up, then write MCP-TEST objects; see README")
+	writeChecks := flag.Bool(
+		"write-checks",
+		false,
+		"back up, then write MCP-TEST objects; see README",
+	)
 	cleanup := flag.Bool("cleanup", false, "remove the MCP-TEST objects named in the state file")
-	inspect := flag.Bool("inspect", false, "report the current state of the objects in the state file, with reads only")
-	followup := flag.Int("followup", 0, "run follow-up stage 1 or 2 on the test objects, between checks on a device")
-	confirmAccount := flag.String("confirm-account", "", "must repeat the configured email for writes")
-	allowRealAccount := flag.Bool("allow-real-account", false, "permit writes to an account with more than 25 recipes")
-	backupPath := flag.String("backup", "write-checks-backup.local", "backup file written before write checks")
-	statePath := flag.String("state", "write-checks-state.local", "file recording the objects write checks created")
+	inspect := flag.Bool(
+		"inspect",
+		false,
+		"report the current state of the objects in the state file, with reads only",
+	)
+	followup := flag.Int(
+		"followup",
+		0,
+		"run follow-up stage 1 or 2 on the test objects, between checks on a device",
+	)
+	confirmAccount := flag.String(
+		"confirm-account",
+		"",
+		"must repeat the configured email for writes",
+	)
+	allowRealAccount := flag.Bool(
+		"allow-real-account",
+		false,
+		"permit writes to an account with more than 25 recipes",
+	)
+	backupPath := flag.String(
+		"backup",
+		"write-checks-backup.local",
+		"backup file written before write checks",
+	)
+	statePath := flag.String(
+		"state",
+		"write-checks-state.local",
+		"file recording the objects write checks created",
+	)
 	flag.Parse()
 
 	modes := 0

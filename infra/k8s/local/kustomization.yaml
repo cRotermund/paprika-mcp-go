@@ -18,3 +18,10 @@ patches:
         value:
           name: LOG_LEVEL
           value: "DEBUG"
+
+secretGenerator:
+  - name: paprika-mcp-go
+    envs:
+      - paprika-mcp-go.env.example
+    options:
+      disableNameSuffixHash: true

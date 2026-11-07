@@ -59,6 +59,14 @@ The sampled account has four types, with `original_type` values 0 to 3. Their
 `original_type` order. (Live) Use each account's `type_uid` and `name` instead of
 hard-coding this, because other accounts have not been checked.
 
+A second, test account had **no meal types** (`GET sync/mealtypes/` returned an empty
+list), and all 371 of its meals had `type_uid: null`, `recipe_uid: null`, `scale: null`,
+`is_ingredient: false`, and an integer `type` (values 1 to 3 seen). (Live) So an account
+can lack meal types, and its meals then rely only on the numeric `type`. A consumer should
+name such a meal by the built-in defaults, 0 Breakfast, 1 Lunch, 2 Dinner, 3 Snacks, which
+are the names the first account's types had for those numbers. (Inferred) A new meal for
+such an account sends the number as `type` and a null `type_uid`, matching the data seen.
+
 ## Menus and Menu Items
 
 These are out of scope for this project's first release, and meal planning does not

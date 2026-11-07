@@ -14,7 +14,12 @@ func TestHealth(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "get", method: http.MethodGet, wantStatus: http.StatusOK, wantBody: `"status":"healthy"`},
+		{
+			name:       "get",
+			method:     http.MethodGet,
+			wantStatus: http.StatusOK,
+			wantBody:   `"status":"healthy"`,
+		},
 		{name: "head", method: http.MethodHead, wantStatus: http.StatusOK},
 	}
 

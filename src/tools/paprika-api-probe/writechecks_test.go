@@ -170,7 +170,12 @@ func TestWriteChecksRefuseBeforeWriting(t *testing.T) {
 			opts := testOptions(t)
 			tt.change(&opts)
 
-			err := runWriteChecks(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, opts)
+			err := runWriteChecks(
+				context.Background(),
+				newWriteProber(server.URL, 0, &bytes.Buffer{}),
+				testPassword,
+				opts,
+			)
 			if !errors.Is(err, errGuard) {
 				t.Errorf("error = %v, want errGuard", err)
 			}
@@ -188,12 +193,30 @@ func TestWriteChecksRunAndCleanUp(t *testing.T) {
 	opts.allowRealAcct = true
 
 	var report bytes.Buffer
-	if err := runWriteChecks(context.Background(), newWriteProber(server.URL, 0, &report), testPassword, opts); err != nil {
+	if err := runWriteChecks(
+		context.Background(),
+		newWriteProber(server.URL, 0, &report),
+		testPassword,
+		opts,
+	); err != nil {
 		t.Fatalf("runWriteChecks: %v\n%s", err, report.String())
 	}
 
 	text := report.String()
-	for _, want := range []string{"W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "Hash case", "Bad token", "original_type=2 name=Dinner"} {
+	for _, want := range []string{
+		"W1",
+		"W2",
+		"W3",
+		"W4",
+		"W5",
+		"W6",
+		"W7",
+		"W8",
+		"W9",
+		"Hash case",
+		"Bad token",
+		"original_type=2 name=Dinner",
+	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("report is missing %q:\n%s", want, text)
 		}
@@ -212,7 +235,12 @@ func TestWriteChecksRunAndCleanUp(t *testing.T) {
 		t.Error("backup does not contain existing meals")
 	}
 
-	if err := runCleanup(context.Background(), newWriteProber(server.URL, 0, &report), testPassword, opts); err != nil {
+	if err := runCleanup(
+		context.Background(),
+		newWriteProber(server.URL, 0, &report),
+		testPassword,
+		opts,
+	); err != nil {
 		t.Fatalf("runCleanup: %v", err)
 	}
 	if got := len(api.lists["groceries"]); got != 0 {
@@ -235,20 +263,34 @@ func TestWriteChecksRunAndCleanUp(t *testing.T) {
 func TestInspectOnlyReads(t *testing.T) {
 	server, api := newFakeWriteAPI(t)
 	opts := testOptions(t)
-	if err := runWriteChecks(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, opts); err != nil {
+	if err := runWriteChecks(
+		context.Background(),
+		newWriteProber(server.URL, 0, &bytes.Buffer{}),
+		testPassword,
+		opts,
+	); err != nil {
 		t.Fatalf("runWriteChecks: %v", err)
 	}
 	writes := len(api.posts)
 
 	var report bytes.Buffer
-	if err := runInspect(context.Background(), newProber(server.URL, 0, &report), testEmail, testPassword, opts.statePath); err != nil {
+	if err := runInspect(
+		context.Background(),
+		newProber(server.URL, 0, &report),
+		testEmail,
+		testPassword,
+		opts.statePath,
+	); err != nil {
 		t.Fatalf("runInspect: %v", err)
 	}
 	if len(api.posts) != writes {
 		t.Errorf("inspect sent %d writes", len(api.posts)-writes)
 	}
 	text := report.String()
-	if !strings.Contains(text, "W5 unknown aisle") || !strings.Contains(text, "aisle_uid known=false") {
+	if !strings.Contains(
+		text,
+		"W5 unknown aisle",
+	) || !strings.Contains(text, "aisle_uid known=false") {
 		t.Errorf("report does not describe items:\n%s", text)
 	}
 	if strings.Contains(text, realMealName) {
@@ -259,7 +301,12 @@ func TestInspectOnlyReads(t *testing.T) {
 func TestFollowupStages(t *testing.T) {
 	server, api := newFakeWriteAPI(t)
 	opts := testOptions(t)
-	if err := runWriteChecks(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, opts); err != nil {
+	if err := runWriteChecks(
+		context.Background(),
+		newWriteProber(server.URL, 0, &bytes.Buffer{}),
+		testPassword,
+		opts,
+	); err != nil {
 		t.Fatalf("runWriteChecks: %v", err)
 	}
 	countRestoreItems := func() int {
@@ -272,7 +319,13 @@ func TestFollowupStages(t *testing.T) {
 		return count
 	}
 
-	if err := runFollowup(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, opts, 1); err != nil {
+	if err := runFollowup(
+		context.Background(),
+		newWriteProber(server.URL, 0, &bytes.Buffer{}),
+		testPassword,
+		opts,
+		1,
+	); err != nil {
 		t.Fatalf("stage 1: %v", err)
 	}
 	if got := countRestoreItems(); got != 0 {
@@ -282,13 +335,25 @@ func TestFollowupStages(t *testing.T) {
 		t.Error("stage 1 changed an existing meal")
 	}
 
-	if err := runFollowup(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, opts, 2); err != nil {
+	if err := runFollowup(
+		context.Background(),
+		newWriteProber(server.URL, 0, &bytes.Buffer{}),
+		testPassword,
+		opts,
+		2,
+	); err != nil {
 		t.Fatalf("stage 2: %v", err)
 	}
 	if got := countRestoreItems(); got != 1 {
 		t.Errorf("stage 2 left %d restore items, want 1", got)
 	}
-	if err := runFollowup(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, opts, 3); !errors.Is(err, errGuard) {
+	if err := runFollowup(
+		context.Background(),
+		newWriteProber(server.URL, 0, &bytes.Buffer{}),
+		testPassword,
+		opts,
+		3,
+	); !errors.Is(err, errGuard) {
 		t.Errorf("stage 3 error = %v, want errGuard", err)
 	}
 }
@@ -297,7 +362,12 @@ func TestWriteChecksStopOnServerError(t *testing.T) {
 	server, api := newFakeWriteAPI(t)
 	api.failPost = "groceries/"
 
-	err := runWriteChecks(context.Background(), newWriteProber(server.URL, 0, &bytes.Buffer{}), testPassword, testOptions(t))
+	err := runWriteChecks(
+		context.Background(),
+		newWriteProber(server.URL, 0, &bytes.Buffer{}),
+		testPassword,
+		testOptions(t),
+	)
 	if !errors.Is(err, errUnexpected) {
 		t.Fatalf("error = %v, want errUnexpected", err)
 	}
@@ -332,7 +402,10 @@ func TestAssertOwnedRefusesOtherObjects(t *testing.T) {
 			}
 		})
 	}
-	if err := c.assertOwned("meals", []object{{"uid": "OWNED", "name": testPrefix + " meal"}}); err != nil {
+	if err := c.assertOwned(
+		"meals",
+		[]object{{"uid": "OWNED", "name": testPrefix + " meal"}},
+	); err != nil {
 		t.Errorf("owned object refused: %v", err)
 	}
 }
