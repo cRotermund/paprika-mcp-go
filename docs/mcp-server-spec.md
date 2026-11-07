@@ -92,18 +92,25 @@ production overlay must not change that.
   up to 1 hour, so a bad password cannot lock the account or look like an attack.
   Concurrent callers share a single login attempt.
 - **Rate limit:** one request at a time across the process, and every request (logins
-  included) takes a token from an in-memory token bucket: 60 per minute with a burst of
-  8 by default (`PAPRIKA_REQUESTS_PER_MINUTE`, `PAPRIKA_REQUEST_BURST`). These sit near
-  the limit inferred from live stalls (about 1 request per second sustained, burst of 8
-  to 10), by the owner's choice, to be tuned from observed stalls. The project never
-  probes for the limit.
+  included) waits on an in-memory sliding-window limiter: at most 10 request starts in any
+  trailing 12 seconds by default (`PAPRIKA_REQUEST_LIMIT`, `PAPRIKA_REQUEST_WINDOW`). The
+  window is slightly wider than the roughly 11 seconds that live stalls suggest Paprika
+  uses, 10 per 12 seconds sustains 50 a minute (the best rate seen to work), and a burst of
+  up to 10 is allowed after idle because 10 rapid requests were seen to pass. The project
+  never probes for the limit.
 - **Priority:** requests are interactive (tool calls) by default. The cache's recipe
-  passes, including age-based re-reads, are background requests, which take a token only
-  if at least 2 would remain, so tool calls are not stuck behind a long load.
-- **Stalls:** a timeout is treated as a throttle signal. The bucket is emptied and the
-  next request waits 60 seconds. A warning logs how many requests went out in the last
-  minute, the rate and burst settings, and the method and path (no bodies or
-  credentials). Nothing extra is sent to measure.
+  passes, including age-based re-reads, are background requests, which start only if at
+  least 2 slots of the window would remain free, so tool calls are not stuck behind a long
+  load.
+- **Stalls:** a timeout is treated as a throttle signal. The next request waits 60
+  seconds. A warning logs how many requests started in the window (`requests_in_window`),
+  the limit and window, the method and path, and connection details (reused, idle time,
+  protocol, requests on that connection), with no bodies or credentials. Nothing extra is
+  sent to measure.
+- **Connection tracing:** the debug line for every request also records whether the
+  connection was reused, whether it was idle and for how long, the protocol, and how many
+  requests that connection has carried. It exists to tell a sliding-window limit from a
+  stall after about 10 requests on one connection. It changes no behavior.
 - **Timeouts:** 20 seconds per request (live testing saw grocery requests hang for 30
   seconds, so a hung call costs 20 seconds, not 30, and is reported at that point).
   After 3 consecutive timeouts, pause for 5 minutes, because a rate block looks like a
@@ -147,7 +154,8 @@ re-read from Paprika, and startup corrects it.
 ### Startup
 
 The API returns no names without reading each recipe, so an empty index means reading every
-recipe once: about 75 seconds for 300 recipes, or 21 minutes for 5,000, at the default rate limit (about 60 requests a minute, so about 5 minutes for 300 recipes and about 85 minutes for 5,000).
+recipe once. Background requests get 8 of the 10 slots per 12 seconds (the default limit, less the
+reserve of 2), so 5,000 recipes take about 2 hours and 228 recipes about 6 minutes.
 An [index snapshot](#index-snapshot) avoids most of this.
 
 1. Load the snapshot, if there is one. Search works from this point if the snapshot was saved
@@ -429,8 +437,8 @@ registered at all, so a read-only deployment has no write path.
 | `PAPRIKA_PASSWORD` | yes | yes | | Paprika password |
 | `MCP_TOKEN_SHA256` | HTTP only | yes | | One or two token hashes |
 | `PAPRIKA_WRITES_ENABLED` | no | no | `false` | Registers write tools |
-| `PAPRIKA_REQUESTS_PER_MINUTE` | no | no | `60` | Paprika request rate (positive integer) |
-| `PAPRIKA_REQUEST_BURST` | no | no | `8` | Paprika request burst (positive integer, above the background reserve of 2) |
+| `PAPRIKA_REQUEST_LIMIT` | no | no | `10` | Most Paprika request starts per window (positive integer, above the background reserve of 2) |
+| `PAPRIKA_REQUEST_WINDOW` | no | no | `12s` | Sliding window for the limit (Go duration, at least `1s`) |
 | `MCP_ALLOWED_ORIGINS` | no | no | empty | Extra allowed `Origin` values |
 | `INDEX_STORE` | no | no | `none` | Snapshot mode: `none`, `filesystem`, or `s3` |
 | `INDEX_FILE_PATH` | `filesystem` only | no | | Snapshot file path, on a writable volume |

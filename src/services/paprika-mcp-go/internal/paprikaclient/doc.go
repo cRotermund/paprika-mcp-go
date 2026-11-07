@@ -16,19 +16,21 @@
 // # Rate limiting and timeouts
 //
 // One request is in flight at a time across the process. Every request,
-// logins included, first takes a token from an in-memory token bucket
-// ([DefaultRequestsPerMinute] refilling, [DefaultRequestBurst] deep). Requests
-// are interactive by default; a context marked with [Background] makes a
-// request background, and it takes a token only if [BackgroundReserve] tokens
-// would remain. Paprika's own limit is unpublished and the defaults sit near
-// an inferred one, so the client never probes for it.
+// logins included, first waits for a slot in an in-memory sliding-window
+// limiter: at most [DefaultRequestLimit] starts in any trailing
+// [DefaultRequestWindow]. Requests are interactive by default; a context
+// marked with [Background] makes a request background, and it starts only if
+// [BackgroundReserve] slots would remain free. Paprika's own limit is
+// unpublished and the defaults sit near an inferred one, so the client never
+// probes for it.
 //
 // Each request has a 20 second timeout. A timeout is treated as a throttle
-// signal: the bucket is emptied, the next request waits a cooldown
-// ([DefaultStallCooldown]), and a warning records how many requests went out
-// in the last minute. After 3 consecutive timeouts the client also pauses for
-// 5 minutes, and every call returns [ErrTemporary] without contacting Paprika
-// until the pause ends.
+// signal: the limiter stays closed for a cooldown ([DefaultStallCooldown]), and
+// a warning records how many requests started in the window and how the
+// connection looked (reused, idle time, protocol, requests on the connection).
+// The same connection fields are on the debug line for every request. After 3
+// consecutive timeouts the client also pauses for 5 minutes, and every call
+// returns [ErrTemporary] without contacting Paprika until the pause ends.
 //
 // # Errors
 //

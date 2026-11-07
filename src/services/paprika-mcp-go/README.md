@@ -26,8 +26,8 @@ variables take precedence over `.env`.
 | `MCP_ALLOWED_ORIGINS` | no | Comma-separated extra `Origin` values (such as `https://example.com`) accepted on `/mcp`. Requests with no `Origin` header are always allowed. Any other `Origin` is rejected with 403. |
 | `PAPRIKA_EMAIL`, `PAPRIKA_PASSWORD` | yes | The Paprika account. Required in both HTTP and `-stdio` modes. Secrets: never logged or returned. Use a separate test account while developing. |
 | `PAPRIKA_WRITES_ENABLED` | no | `true` or `false` (default). The write kill switch: write tools are registered only when this is `true`. |
-| `PAPRIKA_REQUESTS_PER_MINUTE` | no | Positive integer, default `60`. How fast requests to Paprika refill the token bucket. Near the limit inferred from live stalls; tune from observed stalls, never by probing. |
-| `PAPRIKA_REQUEST_BURST` | no | Positive integer, default `8`, and above the background reserve of 2. The bucket's size. Bad values stop startup. |
+| `PAPRIKA_REQUEST_LIMIT` | no | Positive integer, default `10`, and above the background reserve of 2. The most requests that may start within any trailing `PAPRIKA_REQUEST_WINDOW`. Bad values stop startup. |
+| `PAPRIKA_REQUEST_WINDOW` | no | Go duration such as `12s`, default `12s`, at least `1s`. The sliding window the limit applies to. The defaults sit just under what live stalls suggest Paprika tolerates (about 10 per 11 s); tune from observed stalls, never by probing. Bad values stop startup. |
 | `INDEX_STORE` | no | Where to keep the recipe index snapshot: `none` (default), `filesystem`, or `s3`. An unknown mode, or a mode missing its settings, stops startup. |
 | `INDEX_FILE_PATH` | `filesystem` | Snapshot file path, on a writable volume. |
 | `INDEX_S3_BUCKET`, `INDEX_S3_KEY`, `INDEX_S3_ENDPOINT` | `s3` | Bucket (required), object key (default `paprika-mcp-go/recipe-index.json.gz`), and an endpoint override for an S3 emulator. AWS credentials and region come from the SDK's default chain. |
@@ -65,7 +65,7 @@ Checks run on `/mcp` in this order:
 4. Global limit for authenticated requests: 10 per second with bursts of 20.
 5. 1 MiB request body limit and a 90 second request timeout (each Paprika call has its own 20 second timeout).
 
-Separately, requests to Paprika go through a token bucket (`PAPRIKA_REQUESTS_PER_MINUTE`, `PAPRIKA_REQUEST_BURST`) that every call, logins included, takes a token from. The cache's background recipe loading takes a token only when at least 2 would remain, so tool calls are not stuck behind it. A Paprika call that times out is treated as throttling: the bucket is emptied, the next call waits 60 seconds, and a warning logs how many requests went out in the last minute. After 3 consecutive timeouts, calls pause for 5 minutes.
+Separately, requests to Paprika go through a sliding-window limiter (`PAPRIKA_REQUEST_LIMIT` starts in any trailing `PAPRIKA_REQUEST_WINDOW`, 10 per 12 s by default, so a burst of 10 after idle and 50 a minute sustained) that every call, logins included, waits on. The cache's background recipe loading starts a request only when at least 2 slots would remain free, so tool calls are not stuck behind it. A Paprika call that times out is treated as throttling: the next call waits 60 seconds, and a warning logs how many requests started in the window, the limit and window, and how the connection looked (reused, idle time, protocol, requests on that connection). The debug line for each request carries the same connection fields. After 3 consecutive timeouts, calls pause for 5 minutes.
 
 ## Tools
 

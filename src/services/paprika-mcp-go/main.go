@@ -105,12 +105,12 @@ type app struct {
 // so that its final save follows the cache's last change.
 func newApp(ctx context.Context, logger *slog.Logger, cfg *config.Config) (*app, error) {
 	client, err := paprikaclient.New(paprikaclient.Config{
-		Email:             cfg.PaprikaEmail,
-		Password:          cfg.PaprikaPassword,
-		UserAgent:         "paprika-mcp-go/" + mcpserver.Version,
-		Logger:            logger,
-		RequestsPerMinute: cfg.RequestsPerMinute,
-		RequestBurst:      cfg.RequestBurst,
+		Email:         cfg.PaprikaEmail,
+		Password:      cfg.PaprikaPassword,
+		UserAgent:     "paprika-mcp-go/" + mcpserver.Version,
+		Logger:        logger,
+		RequestLimit:  cfg.RequestLimit,
+		RequestWindow: cfg.RequestWindow,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not build Paprika client: %w", err)

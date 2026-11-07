@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/auth"
 	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/indexstore"
@@ -292,32 +293,35 @@ func TestLoadAccountAndIndex(t *testing.T) {
 
 func TestLoadRequestLimits(t *testing.T) {
 	tests := []struct {
-		name      string
-		perMinute string
-		burst     string
-		wantRate  int
-		wantBurst int
-		wantErr   bool
+		name       string
+		limit      string
+		window     string
+		wantLimit  int
+		wantWindow time.Duration
+		wantErr    bool
 	}{
-		{name: "defaults", wantRate: 60, wantBurst: 8},
-		{name: "valid", perMinute: "30", burst: "5", wantRate: 30, wantBurst: 5},
+		{name: "defaults", wantLimit: 10, wantWindow: 12 * time.Second},
+		{name: "valid", limit: "20", window: "30s", wantLimit: 20, wantWindow: 30 * time.Second},
 		{
-			name:      "burst just above the reserve",
-			perMinute: "60",
-			burst:     "3",
-			wantRate:  60,
-			wantBurst: 3,
+			name:       "limit just above the reserve",
+			limit:      "3",
+			wantLimit:  3,
+			wantWindow: 12 * time.Second,
 		},
-		{name: "rate only", perMinute: "120", wantRate: 120, wantBurst: 8},
-		{name: "zero rate", perMinute: "0", wantErr: true},
-		{name: "negative rate", perMinute: "-5", wantErr: true},
-		{name: "non-numeric rate", perMinute: "fast", wantErr: true},
-		{name: "fractional rate", perMinute: "1.5", wantErr: true},
-		{name: "zero burst", burst: "0", wantErr: true},
-		{name: "negative burst", burst: "-1", wantErr: true},
-		{name: "non-numeric burst", burst: "lots", wantErr: true},
-		{name: "burst equal to the reserve", burst: "2", wantErr: true},
-		{name: "burst below the reserve", burst: "1", wantErr: true},
+		{name: "limit only", limit: "15", wantLimit: 15, wantWindow: 12 * time.Second},
+		{name: "window only", window: "1m", wantLimit: 10, wantWindow: time.Minute},
+		{name: "window at the minimum", window: "1s", wantLimit: 10, wantWindow: time.Second},
+		{name: "zero limit", limit: "0", wantErr: true},
+		{name: "negative limit", limit: "-5", wantErr: true},
+		{name: "non-numeric limit", limit: "fast", wantErr: true},
+		{name: "fractional limit", limit: "1.5", wantErr: true},
+		{name: "limit equal to the reserve", limit: "2", wantErr: true},
+		{name: "limit below the reserve", limit: "1", wantErr: true},
+		{name: "window under a second", window: "999ms", wantErr: true},
+		{name: "zero window", window: "0s", wantErr: true},
+		{name: "negative window", window: "-12s", wantErr: true},
+		{name: "window without a unit", window: "12", wantErr: true},
+		{name: "non-duration window", window: "soon", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -325,8 +329,8 @@ func TestLoadRequestLimits(t *testing.T) {
 			t.Setenv(EnvPort, "8080")
 			t.Setenv(EnvAllowedOrigins, "")
 			t.Setenv(EnvWritesEnabled, "")
-			t.Setenv(EnvRequestsPerMin, tt.perMinute)
-			t.Setenv(EnvRequestBurst, tt.burst)
+			t.Setenv(EnvRequestLimit, tt.limit)
+			t.Setenv(EnvRequestWindow, tt.window)
 			setAccount(t)
 
 			cfg, err := Load(slog.New(slog.NewTextHandler(&strings.Builder{}, nil)))
@@ -336,13 +340,13 @@ func TestLoadRequestLimits(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if cfg.RequestsPerMinute != tt.wantRate || cfg.RequestBurst != tt.wantBurst {
+			if cfg.RequestLimit != tt.wantLimit || cfg.RequestWindow != tt.wantWindow {
 				t.Errorf(
-					"limits = %d/%d, want %d/%d",
-					cfg.RequestsPerMinute,
-					cfg.RequestBurst,
-					tt.wantRate,
-					tt.wantBurst,
+					"limits = %d per %s, want %d per %s",
+					cfg.RequestLimit,
+					cfg.RequestWindow,
+					tt.wantLimit,
+					tt.wantWindow,
 				)
 			}
 		})

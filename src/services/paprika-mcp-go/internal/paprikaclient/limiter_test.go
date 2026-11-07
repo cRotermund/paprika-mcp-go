@@ -1,250 +1,335 @@
 package paprikaclient
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"log/slog"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/cRotermund/paprika-mcp-go/src/services/paprika-mcp-go/internal/paprikaclient/fakepaprika"
 )
 
-// limitedClient returns a client with the token bucket on and a fake clock
-// that sleeping advances.
-func limitedClient(
-	t *testing.T,
-	f *fakepaprika.Server,
-	mutate func(*Config),
-) (*Client, *stepClock) {
-	t.Helper()
-	sc := newStepClock()
-	c, _ := newTestClient(t, f, func(cfg *Config) {
-		cfg.RequestsPerMinute = 60
-		cfg.RequestBurst = 8
-		cfg.Now = func() time.Time { return sc.now }
-		if mutate != nil {
-			mutate(cfg)
-		}
-	})
-	c.bucket.clock = sc.clock()
-	return c, sc
+// stepClock is a clock whose sleeps advance it instead of waiting.
+type stepClock struct {
+	now   time.Time
+	slept []time.Duration
 }
 
-func TestNewRejectsBurstAtOrBelowReserve(t *testing.T) {
+func newStepClock() *stepClock {
+	return &stepClock{now: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)}
+}
+
+func (s *stepClock) clock() limiterClock {
+	return limiterClock{
+		now: func() time.Time { return s.now },
+		sleep: func(ctx context.Context, d time.Duration) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			s.slept = append(s.slept, d)
+			s.now = s.now.Add(d)
+			return nil
+		},
+	}
+}
+
+func (s *stepClock) total() time.Duration {
+	var sum time.Duration
+	for _, d := range s.slept {
+		sum += d
+	}
+	return sum
+}
+
+func mustWait(t *testing.T, l *limiter, reserve int) {
+	t.Helper()
+	if _, err := l.Wait(context.Background(), reserve); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLimiterWindow(t *testing.T) {
 	tests := []struct {
-		name    string
-		perMin  int
-		burst   int
-		wantErr bool
+		name      string
+		limit     int
+		window    time.Duration
+		waits     int
+		wantSlept time.Duration
+		wantSleep int
 	}{
-		{"burst equal to the reserve", 60, BackgroundReserve, true},
-		{"burst below the reserve", 60, 1, true},
-		{"burst above the reserve", 60, BackgroundReserve + 1, false},
-		{"limiting off ignores the burst", -1, 1, false},
-		{"defaults", 0, 0, false},
+		{
+			name:   "the limit goes at once",
+			limit:  3,
+			window: 10 * time.Second,
+			waits:  3,
+		},
+		{
+			name:      "one past the limit waits for the oldest",
+			limit:     3,
+			window:    10 * time.Second,
+			waits:     4,
+			wantSlept: 10 * time.Second,
+			wantSleep: 1,
+		},
+		{
+			name:      "a second batch goes together",
+			limit:     3,
+			window:    10 * time.Second,
+			waits:     6,
+			wantSlept: 10 * time.Second,
+			wantSleep: 1,
+		},
+		{
+			name:      "a third batch waits a second window",
+			limit:     3,
+			window:    10 * time.Second,
+			waits:     7,
+			wantSlept: 20 * time.Second,
+			wantSleep: 2,
+		},
+		{
+			name:      "the default window",
+			limit:     DefaultRequestLimit,
+			window:    DefaultRequestWindow,
+			waits:     11,
+			wantSlept: 12 * time.Second,
+			wantSleep: 1,
+		},
+		{
+			name:      "a limit of one",
+			limit:     1,
+			window:    time.Second,
+			waits:     3,
+			wantSlept: 2 * time.Second,
+			wantSleep: 2,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := New(Config{
-				Email:             "e",
-				Password:          "p",
-				RequestsPerMinute: tt.perMin,
-				RequestBurst:      tt.burst,
-			})
-			if tt.wantErr != errors.Is(err, ErrInvalidArgument) {
-				t.Fatalf("error = %v, want invalid argument = %v", err, tt.wantErr)
+			sc := newStepClock()
+			l := newLimiter(tt.limit, tt.window, sc.clock())
+			for range tt.waits {
+				mustWait(t, l, 0)
+			}
+			if got := sc.total(); got != tt.wantSlept {
+				t.Errorf("slept %s, want %s", got, tt.wantSlept)
+			}
+			if len(sc.slept) != tt.wantSleep {
+				t.Errorf("sleeps = %d, want %d", len(sc.slept), tt.wantSleep)
 			}
 		})
 	}
 }
 
-func TestLoginsAndRequestsShareTheBurst(t *testing.T) {
-	f := newFake(t)
-	c, sc := limitedClient(t, f, nil)
-	// One login and nine reads make ten requests against a burst of eight.
-	for range 9 {
-		if _, err := c.Status(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+func TestLimiterNextWaitsUntilTheOldestLeaves(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(3, 10*time.Second, sc.clock())
+	for range 3 {
+		mustWait(t, l, 0)
+		sc.now = sc.now.Add(2 * time.Second) // starts at 0 s, 2 s, 4 s
 	}
-	if got := len(f.Requests()); got != 10 {
-		t.Fatalf("requests = %d, want 10", got)
-	}
-	if got := sc.total(); got != 2*time.Second {
-		t.Fatalf("waited %s, want 2s for the two requests past the burst", got)
+	// Now 6 s. The oldest start (0 s) leaves the window at 10 s.
+	mustWait(t, l, 0)
+	if got := sc.total(); got != 4*time.Second {
+		t.Fatalf("waited %s, want 4s until the oldest start leaves", got)
 	}
 }
 
-func TestBackgroundStopsAtTheReserve(t *testing.T) {
-	f := newFake(t)
-	c, sc := limitedClient(t, f, nil)
-	bg := Background(context.Background())
+func TestLimiterSteadySpacingNeverWaits(t *testing.T) {
+	tests := []struct {
+		name    string
+		spacing time.Duration
+	}{
+		{"exactly window over limit", DefaultRequestWindow / DefaultRequestLimit},
+		{"slower than that", 1500 * time.Millisecond},
+		{"much slower", 10 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sc := newStepClock()
+			l := newLimiter(DefaultRequestLimit, DefaultRequestWindow, sc.clock())
+			for range 200 {
+				mustWait(t, l, 0)
+				if got := l.Count(sc.now); got > DefaultRequestLimit {
+					t.Fatalf("%d starts in the window, limit %d", got, DefaultRequestLimit)
+				}
+				sc.now = sc.now.Add(tt.spacing)
+			}
+			if len(sc.slept) != 0 {
+				t.Fatalf("steady requests waited: %v", sc.slept)
+			}
+		})
+	}
+}
 
-	// The login takes 1 of 8 tokens; background requests may use tokens until
-	// only the reserve is left, which is five more.
-	for i := range 5 {
-		if _, err := c.Status(bg); err != nil {
-			t.Fatalf("background request %d: %v", i+1, err)
+func TestLimiterNeverExceedsTheLimitInAnyWindow(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(DefaultRequestLimit, DefaultRequestWindow, sc.clock())
+	var starts []time.Time
+	for range 120 {
+		at, err := l.Wait(context.Background(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		starts = append(starts, at)
+	}
+	for i := DefaultRequestLimit; i < len(starts); i++ {
+		if starts[i].Sub(starts[i-DefaultRequestLimit]) < DefaultRequestWindow {
+			t.Fatalf("starts %d to %d fit in %s", i-DefaultRequestLimit, i, DefaultRequestWindow)
 		}
 	}
-	if len(sc.slept) != 0 {
-		t.Fatalf("background requests waited before the reserve: %v", sc.slept)
+}
+
+func TestLimiterReserve(t *testing.T) {
+	tests := []struct {
+		name    string
+		reserve int
+		taken   int
+		wantNow bool
+	}{
+		{"interactive with the window nearly full", 0, 9, true},
+		{"interactive at the reserve", 0, 8, true},
+		{"background just under the reserve proceeds", BackgroundReserve, 7, true},
+		{"background at the reserve waits", BackgroundReserve, 8, false},
+		{"background above the reserve waits", BackgroundReserve, 9, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sc := newStepClock()
+			l := newLimiter(DefaultRequestLimit, DefaultRequestWindow, sc.clock())
+			for range tt.taken {
+				mustWait(t, l, 0)
+			}
+			mustWait(t, l, tt.reserve)
+			gotNow := len(sc.slept) == 0
+			if gotNow != tt.wantNow {
+				t.Fatalf("immediate = %v, want %v (slept %v)", gotNow, tt.wantNow, sc.slept)
+			}
+		})
+	}
+}
+
+func TestLimiterBackgroundWaitsWhileInteractiveProceeds(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(DefaultRequestLimit, DefaultRequestWindow, sc.clock())
+	for range DefaultRequestLimit - BackgroundReserve {
+		mustWait(t, l, BackgroundReserve)
 	}
 
-	blocked, cancel := context.WithCancel(bg)
+	ctx, cancel := context.WithCancel(context.Background())
 	clock := sc.clock()
 	clock.sleep = func(ctx context.Context, _ time.Duration) error {
 		cancel()
 		return ctx.Err()
 	}
-	c.bucket.clock = clock
-	before := len(f.Requests())
-	if _, err := c.Status(blocked); !errors.Is(err, context.Canceled) {
+	l.clock = clock
+	if _, err := l.Wait(ctx, BackgroundReserve); !errors.Is(err, context.Canceled) {
 		t.Fatalf("background error = %v, want it held until canceled", err)
 	}
 
-	if _, err := c.Status(context.Background()); err != nil {
-		t.Fatalf("interactive request with the reserve left: %v", err)
-	}
-	if got := len(f.Requests()) - before; got != 1 {
-		t.Fatalf("requests after the hold = %d, want only the interactive one", got)
-	}
-}
-
-// logRecords decodes JSON log lines.
-func logRecords(t *testing.T, buf *bytes.Buffer) []map[string]any {
-	t.Helper()
-	var out []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
-		if line == "" {
-			continue
-		}
-		rec := map[string]any{}
-		if err := json.Unmarshal([]byte(line), &rec); err != nil {
-			t.Fatalf("log line %q: %v", line, err)
-		}
-		out = append(out, rec)
-	}
-	return out
-}
-
-func TestTimeoutEmptiesBucketAndDelaysNextRequest(t *testing.T) {
-	f := newFake(t)
-	const password = "hunter2-very-secret"
-	f.SetPassword(password)
-	var logs bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	c, sc := limitedClient(t, f, func(cfg *Config) {
-		cfg.Logger = logger
-		cfg.Password = password
-		cfg.RequestTimeout = 30 * time.Millisecond
-		cfg.StallCooldown = 90 * time.Second
-	})
-	ctx := context.Background()
-
-	f.Inject(fakepaprika.Fault{
-		Path:  statusPath,
-		Kind:  fakepaprika.FaultDelay,
-		Delay: 300 * time.Millisecond,
-	})
-	if _, err := c.Status(ctx); !errors.Is(err, ErrTemporary) {
-		t.Fatalf("error = %v, want ErrTemporary", err)
+	l.clock = sc.clock()
+	for range BackgroundReserve {
+		mustWait(t, l, 0)
 	}
 	if len(sc.slept) != 0 {
-		t.Fatalf("the first requests waited: %v", sc.slept)
+		t.Fatalf("interactive requests waited inside the reserve: %v", sc.slept)
 	}
+}
 
-	if _, err := c.Status(ctx); err != nil {
+func TestLimiterWaitHonorsContext(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(1, time.Minute, sc.clock())
+	mustWait(t, l, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	clock := sc.clock()
+	clock.sleep = func(ctx context.Context, _ time.Duration) error {
+		cancel()
+		return ctx.Err()
+	}
+	l.clock = clock
+	if _, err := l.Wait(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled", err)
+	}
+	if _, err := l.Wait(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("an already canceled context: error = %v, want canceled", err)
+	}
+	if got := l.Count(sc.now); got != 1 {
+		t.Fatalf("a canceled wait recorded a start: count = %d, want 1", got)
+	}
+}
+
+func TestLimiterHoldDelaysTheNextStart(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(DefaultRequestLimit, DefaultRequestWindow, sc.clock())
+	mustWait(t, l, 0)
+	l.Hold(time.Minute)
+
+	mustWait(t, l, 0)
+	if got := sc.total(); got != time.Minute {
+		t.Fatalf("waited %s after a hold, want 1m", got)
+	}
+	mustWait(t, l, 0)
+	if got := sc.total(); got != time.Minute {
+		t.Fatalf("waited %s, want no further wait once the hold ended", got)
+	}
+}
+
+func TestLimiterOffRecordsWithoutBlocking(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(-1, time.Second, sc.clock())
+	for range 50 {
+		mustWait(t, l, BackgroundReserve)
+	}
+	if len(sc.slept) != 0 {
+		t.Fatalf("a disabled limiter waited: %v", sc.slept)
+	}
+	if got := l.Count(sc.now); got != 50 {
+		t.Fatalf("count = %d, want 50", got)
+	}
+}
+
+func TestLimiterCountsOnlyTheWindow(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(100, time.Minute, sc.clock())
+	start := sc.now
+	offsets := []time.Duration{
+		0,
+		10 * time.Second,
+		59 * time.Second,
+		61 * time.Second,
+	}
+	for _, offset := range offsets {
+		sc.now = start.Add(offset)
+		mustWait(t, l, 0)
+	}
+	tests := []struct {
+		at   time.Duration
+		want int
+	}{
+		{61 * time.Second, 3},
+		{70 * time.Second, 2},
+		{125 * time.Second, 0},
+	}
+	for _, tt := range tests {
+		if got := l.Count(start.Add(tt.at)); got != tt.want {
+			t.Errorf("count at %s = %d, want %d", tt.at, got, tt.want)
+		}
+	}
+}
+
+func TestLimiterRestampMovesAStartToItsRealTime(t *testing.T) {
+	sc := newStepClock()
+	l := newLimiter(2, 10*time.Second, sc.clock())
+	first, err := l.Wait(context.Background(), 0)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sc.total(); got != 90*time.Second {
-		t.Fatalf("next request waited %s, want the 90s cooldown", got)
-	}
+	mustWait(t, l, 0)
 
-	var stall map[string]any
-	for _, rec := range logRecords(t, &logs) {
-		if strings.Contains(rec["msg"].(string), "stalled") {
-			stall = rec
-		}
-	}
-	if stall == nil {
-		t.Fatalf("no stall warning in the logs:\n%s", logs.String())
-	}
-	want := map[string]any{
-		"level":                "WARN",
-		"requests_last_minute": float64(2),
-		"requests_per_minute":  float64(60),
-		"burst":                float64(8),
-		"method":               "GET",
-		"path":                 statusPath,
-	}
-	for k, v := range want {
-		if stall[k] != v {
-			t.Errorf("stall %s = %v, want %v", k, stall[k], v)
-		}
-	}
-	for _, secret := range []string{password, f.Email(), "Bearer", "fake-token-"} {
-		if strings.Contains(logs.String(), secret) {
-			t.Errorf("logs contain %q:\n%s", secret, logs.String())
-		}
-	}
-}
+	sc.now = sc.now.Add(8 * time.Second) // the first request really started late
+	l.Restamp(first)
+	sc.now = sc.now.Add(3 * time.Second) // 11 s: the original stamp would have left
 
-func TestThreeTimeoutsStillPauseWithLimiting(t *testing.T) {
-	f := newFake(t)
-	c, sc := limitedClient(t, f, func(cfg *Config) {
-		cfg.RequestTimeout = 30 * time.Millisecond
-		cfg.TimeoutThreshold = 3
-		cfg.TimeoutPause = 5 * time.Minute
-	})
-	ctx := context.Background()
-	f.Inject(fakepaprika.Fault{
-		Path:  statusPath,
-		Times: -1,
-		Kind:  fakepaprika.FaultDelay,
-		Delay: 300 * time.Millisecond,
-	})
-	for i := range 3 {
-		if _, err := c.Status(ctx); !errors.Is(err, ErrTemporary) {
-			t.Fatalf("timeout %d: error = %v, want ErrTemporary", i+1, err)
-		}
-	}
-	before, slept := len(f.Requests()), sc.total()
-	if _, err := c.Status(ctx); !errors.Is(err, ErrTemporary) {
-		t.Fatalf("paused call: error = %v, want ErrTemporary", err)
-	}
-	if len(f.Requests()) != before || sc.total() != slept {
-		t.Fatal("a paused call must neither reach the server nor take a token")
-	}
-
-	f.ClearFaults()
-	sc.now = sc.now.Add(5*time.Minute + time.Second)
-	if _, err := c.Status(ctx); err != nil {
-		t.Fatalf("after the pause: %v", err)
-	}
-}
-
-func TestWriteTimeoutWithLimitingIsUnknownAndSentOnce(t *testing.T) {
-	f := newFake(t)
-	c, _ := limitedClient(t, f, func(cfg *Config) { cfg.RequestTimeout = 30 * time.Millisecond })
-	f.Inject(fakepaprika.Fault{
-		Method: "POST",
-		Path:   mealsPath,
-		Times:  -1,
-		Kind:   fakepaprika.FaultDelay,
-		Delay:  300 * time.Millisecond,
-	})
-	meal := Object{}
-	_ = meal.Set("uid", "MEAL-1")
-	err := c.SaveMeals(context.Background(), []Object{meal})
-	if !errors.Is(err, ErrOutcomeUnknown) || errors.Is(err, ErrTemporary) {
-		t.Fatalf("error = %v, want ErrOutcomeUnknown only", err)
-	}
-	if got := len(f.RequestsTo("POST", mealsPath)); got != 1 {
-		t.Fatalf("meal POSTs = %d, want exactly 1", got)
+	if got := l.Count(sc.now); got != 1 {
+		t.Fatalf("count = %d, want only the restamped start", got)
 	}
 }

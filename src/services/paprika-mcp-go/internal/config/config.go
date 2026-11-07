@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -25,8 +26,8 @@ const (
 	EnvWritesEnabled  = "PAPRIKA_WRITES_ENABLED"
 	EnvPaprikaEmail   = "PAPRIKA_EMAIL"
 	EnvPaprikaPass    = "PAPRIKA_PASSWORD"
-	EnvRequestsPerMin = "PAPRIKA_REQUESTS_PER_MINUTE"
-	EnvRequestBurst   = "PAPRIKA_REQUEST_BURST"
+	EnvRequestLimit   = "PAPRIKA_REQUEST_LIMIT"
+	EnvRequestWindow  = "PAPRIKA_REQUEST_WINDOW"
 )
 
 type Config struct {
@@ -48,10 +49,11 @@ type Config struct {
 	PaprikaEmail    string
 	PaprikaPassword string
 
-	// RequestsPerMinute and RequestBurst size the Paprika client's token
-	// bucket (PAPRIKA_REQUESTS_PER_MINUTE, PAPRIKA_REQUEST_BURST).
-	RequestsPerMinute int
-	RequestBurst      int
+	// RequestLimit and RequestWindow size the Paprika client's sliding window:
+	// at most RequestLimit request starts in any trailing RequestWindow
+	// (PAPRIKA_REQUEST_LIMIT, PAPRIKA_REQUEST_WINDOW).
+	RequestLimit  int
+	RequestWindow time.Duration
 
 	// Index selects where the recipe index snapshot is kept (INDEX_* variables).
 	// The caller sets Index.FormatVersion.
@@ -116,31 +118,32 @@ func load(logger *slog.Logger, httpMode bool) (*Config, error) {
 		return nil, err
 	}
 
-	cfg.RequestsPerMinute, err = positiveInt(
-		EnvRequestsPerMin,
-		paprikaclient.DefaultRequestsPerMinute,
-		logger,
-	)
+	cfg.RequestLimit, err = positiveInt(EnvRequestLimit, paprikaclient.DefaultRequestLimit, logger)
 	if err != nil {
 		return nil, err
 	}
-	cfg.RequestBurst, err = positiveInt(EnvRequestBurst, paprikaclient.DefaultRequestBurst, logger)
-	if err != nil {
-		return nil, err
-	}
-	if cfg.RequestBurst <= paprikaclient.BackgroundReserve {
+	if cfg.RequestLimit <= paprikaclient.BackgroundReserve {
 		logger.Error(
-			"request burst must exceed the background reserve",
+			"request limit must exceed the background reserve",
 			"name",
-			EnvRequestBurst,
+			EnvRequestLimit,
 			"reserve",
 			paprikaclient.BackgroundReserve,
 		)
 		return nil, fmt.Errorf(
 			"environment variable %s must be greater than %d",
-			EnvRequestBurst,
+			EnvRequestLimit,
 			paprikaclient.BackgroundReserve,
 		)
+	}
+	cfg.RequestWindow, err = minDuration(
+		EnvRequestWindow,
+		paprikaclient.DefaultRequestWindow,
+		minRequestWindow,
+		logger,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	cfg.Index, err = indexstore.ConfigFromEnv(os.Getenv)
@@ -249,6 +252,34 @@ func positiveInt(name string, fallback int, logger *slog.Logger) (int, error) {
 	if value <= 0 {
 		logger.Error("environment variable must be a positive integer", "name", name)
 		return 0, fmt.Errorf("environment variable %s must be a positive integer", name)
+	}
+
+	return value, nil
+}
+
+// minRequestWindow is the shortest accepted PAPRIKA_REQUEST_WINDOW.
+const minRequestWindow = time.Second
+
+// minDuration reads an optional Go duration such as "12s" that must be at least
+// minimum.
+func minDuration(
+	name string,
+	fallback, minimum time.Duration,
+	logger *slog.Logger,
+) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+
+	value, err := time.ParseDuration(raw)
+	if err != nil {
+		logger.Error("could not parse environment variable as a duration", "name", name)
+		return 0, fmt.Errorf("environment variable %s is not a duration such as 12s: %w", name, err)
+	}
+	if value < minimum {
+		logger.Error("environment variable is too short", "name", name, "minimum", minimum)
+		return 0, fmt.Errorf("environment variable %s must be at least %s", name, minimum)
 	}
 
 	return value, nil

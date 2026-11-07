@@ -37,10 +37,10 @@ spec:
               value: "8080"
             - name: PAPRIKA_WRITES_ENABLED
               value: "false"
-            - name: PAPRIKA_REQUESTS_PER_MINUTE
-              value: "60"
-            - name: PAPRIKA_REQUEST_BURST
-              value: "8"
+            - name: PAPRIKA_REQUEST_LIMIT
+              value: "10"
+            - name: PAPRIKA_REQUEST_WINDOW
+              value: "12s"
             - name: INDEX_STORE
               value: "none"
             - name: MCP_TOKEN_SHA256
