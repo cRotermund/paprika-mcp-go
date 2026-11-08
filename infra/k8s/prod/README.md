@@ -36,6 +36,10 @@ The Deployment reads `MCP_TOKEN_SHA256`, `PAPRIKA_EMAIL`, and `PAPRIKA_PASSWORD`
 comma-separated SHA-256 hashes of the bearer token; the server will not start without it. See the
 service README for how to generate one.
 
+To write these values to SSM, and to rotate them, follow
+[docs/secrets-bootstrap-rotation.md](../../../docs/secrets-bootstrap-rotation.md). It uses the
+`src/tools/ssm-secrets` tool and a gitignored `secrets.env` (start from `secrets.env.example`).
+
 ## Index snapshot in S3
 
 The overlay sets `INDEX_STORE=s3`, so a restart reloads the snapshot instead of reading the whole

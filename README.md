@@ -11,6 +11,7 @@ See the [design spec](docs/mcp-server-spec.md).
 ```
 src/services/paprika-mcp-go/   The MCP server
 src/tools/paprika-api-probe/   Local tool for checking our API docs; never deployed
+src/tools/ssm-secrets/         Local tool that writes production secrets to AWS SSM; never deployed
 docs/paprika-api/              Unofficial Paprika API reference and research notes
 docs/mcp-server-spec.md        Design of the MCP server
 docs/                          Other architecture and development guides
