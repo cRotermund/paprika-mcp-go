@@ -610,7 +610,7 @@ before any path to changing account data exists.
 1. **Secret store:** the name and kind of the store for the `ExternalSecret`, plus the
    installed External Secrets Operator version.
 2. ~~**Hostname:**~~ Resolved. The public URL is `https://apis.rotorlabs.io/paprika/mcp`.
-   `MCP_ALLOWED_ORIGINS` is `https://apis.rotorlabs.io`. The ingress lives in the GitOps
+   `MCP_ALLOWED_ORIGINS` is left unset, because server-side clients send no `Origin`; set it only for browser-based clients. The ingress lives in the GitOps
    repository, not in this repository's overlay, and strips the `/paprika` prefix because the
    server serves only `/mcp` and `/health`.
 3. ~~**Production snapshot:**~~ Resolved. The snapshot is the object

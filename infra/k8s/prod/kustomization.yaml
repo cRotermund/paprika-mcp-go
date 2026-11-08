@@ -49,8 +49,6 @@ patches:
                     value: arn:aws:iam::471112535288:role/paprika-mcp
                   - name: AWS_WEB_IDENTITY_TOKEN_FILE
                     value: /var/run/secrets/aws/token
-                  - name: MCP_ALLOWED_ORIGINS
-                    value: https://apis.rotorlabs.io
                 volumeMounts:
                   - name: aws-token
                     mountPath: /var/run/secrets/aws

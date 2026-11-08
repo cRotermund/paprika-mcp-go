@@ -63,5 +63,7 @@ The cluster has no EKS pod identity webhook, so the Deployment wires up AWS acce
 The public URL is `https://apis.rotorlabs.io/paprika/mcp`. TLS ends at the load balancer, and the
 ingress lives in the GitOps repository. The server answers only `/mcp` and `/health`, so the
 ingress must strip the `/paprika` prefix before forwarding to Service `paprika-mcp-go` port 8080.
-`MCP_ALLOWED_ORIGINS` is `https://apis.rotorlabs.io` (scheme and host only, no path), which is the
-`Origin` a browser-based client would send.
+`MCP_ALLOWED_ORIGINS` is deliberately unset, so the overlay does not contain the hostname.
+Server-side MCP clients send no `Origin` header and are allowed; a request with an unknown
+`Origin` is rejected. Set `MCP_ALLOWED_ORIGINS` here (for example `https://apis.rotorlabs.io`)
+only if a browser-based MCP client needs to reach the endpoint.
