@@ -37,6 +37,8 @@ patches:
             containers:
               - name: paprika-mcp-go
                 env:
+                  - name: PAPRIKA_WRITES_ENABLED
+                    value: "true"
                   - name: INDEX_STORE
                     value: s3
                   - name: INDEX_S3_BUCKET
