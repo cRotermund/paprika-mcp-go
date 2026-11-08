@@ -213,7 +213,8 @@ src/
 ├── services/
 │   └── paprika-mcp-go/            # Go service
 ├── tools/
-│   └── paprika-api-probe/         # Local developer tool, never deployed
+│   ├── paprika-api-probe/         # Local developer tool, never deployed
+│   └── ssm-secrets/               # Local tool: production secrets to SSM, never deployed
 └── pkg/                        # Shared Go libraries (create as needed)
 docs/                           # Architecture and development guides
 infra/
