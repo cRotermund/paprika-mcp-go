@@ -23,3 +23,43 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Always
+  - target:
+      kind: Deployment
+      name: paprika-mcp-go
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: paprika-mcp-go
+      spec:
+        template:
+          spec:
+            containers:
+              - name: paprika-mcp-go
+                env:
+                  - name: INDEX_STORE
+                    value: s3
+                  - name: INDEX_S3_BUCKET
+                    value: paprika-mcp-store
+                  - name: INDEX_S3_KEY
+                    value: paprika-mcp-go/recipe-index.json.gz
+                  - name: AWS_REGION
+                    value: us-east-1
+                  - name: AWS_ROLE_ARN
+                    value: arn:aws:iam::471112535288:role/paprika-mcp
+                  - name: AWS_WEB_IDENTITY_TOKEN_FILE
+                    value: /var/run/secrets/aws/token
+                  - name: MCP_ALLOWED_ORIGINS
+                    value: https://apis.rotorlabs.io
+                volumeMounts:
+                  - name: aws-token
+                    mountPath: /var/run/secrets/aws
+                    readOnly: true
+            volumes:
+              - name: aws-token
+                projected:
+                  sources:
+                    - serviceAccountToken:
+                        audience: sts.amazonaws.com
+                        expirationSeconds: 3600
+                        path: token

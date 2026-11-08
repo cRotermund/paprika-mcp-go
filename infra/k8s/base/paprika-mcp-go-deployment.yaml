@@ -16,6 +16,7 @@ spec:
       labels:
         app: paprika-mcp-go
     spec:
+      serviceAccountName: paprika-mcp-go
       containers:
         - name: paprika-mcp-go
           image: paprika-mcp-go:latest

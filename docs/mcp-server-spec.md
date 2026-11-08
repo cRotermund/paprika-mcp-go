@@ -609,6 +609,13 @@ before any path to changing account data exists.
 
 1. **Secret store:** the name and kind of the store for the `ExternalSecret`, plus the
    installed External Secrets Operator version.
-2. **Hostname:** the public hostname and path for `MCP_ALLOWED_ORIGINS` and the ingress, and
-   whether an ingress belongs in this repository's overlay or your infrastructure.
-3. **Production snapshot:** the bucket name, and how the pod gets AWS credentials.
+2. ~~**Hostname:**~~ Resolved. The public URL is `https://apis.rotorlabs.io/paprika/mcp`.
+   `MCP_ALLOWED_ORIGINS` is `https://apis.rotorlabs.io`. The ingress lives in the GitOps
+   repository, not in this repository's overlay, and strips the `/paprika` prefix because the
+   server serves only `/mcp` and `/health`.
+3. ~~**Production snapshot:**~~ Resolved. The snapshot is the object
+   `paprika-mcp-go/recipe-index.json.gz` in the S3 bucket `paprika-mcp-store`. The pod assumes an
+   IAM role with `sts:AssumeRoleWithWebIdentity` using a projected service-account token
+   (audience `sts.amazonaws.com`) that the prod overlay mounts itself, because the cluster has no
+   EKS pod identity webhook. The `paprika-mcp-go` Secret comes from an `ExternalSecret` in the
+   GitOps repository. See [infra/k8s/prod/README.md](../infra/k8s/prod/README.md).
