@@ -30,12 +30,40 @@ The base Deployment runs one replica with the `Recreate` strategy, and the
 overlay must not change that: the write lock and the recipe cache live in the
 process, so two pods could interleave writes.
 
-The Deployment reads `MCP_TOKEN_SHA256`, `PAPRIKA_EMAIL`, and `PAPRIKA_PASSWORD` from the `paprika-mcp-go` Secret. The
-cluster's secret store provisions that Secret, for example with an
-`ExternalSecret`, outside this repository. The value is one or two
-comma-separated SHA-256 hashes of the bearer token; the server will not start
-without it. See the service README for how to generate one.
+The Deployment reads `MCP_TOKEN_SHA256`, `PAPRIKA_EMAIL`, and `PAPRIKA_PASSWORD` from the
+`paprika-mcp-go` Secret. An `ExternalSecret` in the GitOps repository provisions that Secret in
+`chad-applications`; nothing in this repository creates it. `MCP_TOKEN_SHA256` is one or two
+comma-separated SHA-256 hashes of the bearer token; the server will not start without it. See the
+service README for how to generate one.
 
-`INDEX_STORE` defaults to `none` in the base Deployment, so every start reads the whole library. To
-keep a snapshot, set `INDEX_STORE` and its settings in this overlay (see the service README); the
-root filesystem is read-only, so `filesystem` mode needs a mounted volume.
+## Index snapshot in S3
+
+The overlay sets `INDEX_STORE=s3`, so a restart reloads the snapshot instead of reading the whole
+library. The bucket and role come from the Terraform stack `apps/paprika-mcp` in the AWS
+infrastructure repository (`bucket_name`, `role_arn`, and `snapshot_key` outputs); none of them is
+secret. The base Deployment keeps `INDEX_STORE=none`, so local development needs no AWS.
+
+The cluster has no EKS pod identity webhook, so the Deployment wires up AWS access itself:
+
+- The base `ServiceAccount` is named `paprika-mcp-go`. The role's trust policy accepts only
+  `system:serviceaccount:chad-applications:paprika-mcp-go` with audience `sts.amazonaws.com`, so
+  renaming either one breaks the exchange.
+- A read-only projected `serviceAccountToken` volume (audience `sts.amazonaws.com`, one hour,
+  file `token`) is mounted at `/var/run/secrets/aws`. The kubelet refreshes it, and a projected
+  volume works with the read-only root filesystem.
+- `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE` make the AWS SDK's default credential chain
+  call `sts:AssumeRoleWithWebIdentity` through the cluster's service-account OIDC issuer. No code
+  change or stored AWS key is involved.
+- The role can read and write only the one snapshot key and list the bucket for that key. If the
+  Terraform `snapshot_key` or bucket changes, update `INDEX_S3_KEY` and `INDEX_S3_BUCKET` in
+  `kustomization.yaml`.
+
+## Public endpoint
+
+The public URL is `https://apis.rotorlabs.io/paprika/mcp`. TLS ends at the load balancer, and the
+ingress lives in the GitOps repository. The server answers only `/mcp` and `/health`, so the
+ingress must strip the `/paprika` prefix before forwarding to Service `paprika-mcp-go` port 8080.
+`MCP_ALLOWED_ORIGINS` is deliberately unset, so the overlay does not contain the hostname.
+Server-side MCP clients send no `Origin` header and are allowed; a request with an unknown
+`Origin` is rejected. Set `MCP_ALLOWED_ORIGINS` here (for example `https://apis.rotorlabs.io`)
+only if a browser-based MCP client needs to reach the endpoint.
